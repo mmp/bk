@@ -1,0 +1,20 @@
+TODO:
+- storage class not being set by copy; gcs bug?
+
+Rosenthal, 2010: Keeping bits safe: How hard can it be? ACM Queue
+
+Tridgell and Mackerras, 1996, the Rsync algorithm, Australian Nat Univ TR
+
+- support gcs in storage_test.go (if env vars set)
+- support gcs in bk_e2etest (don't use coldline, run from gcs)
+- write unit tests for ReadMulti
+- Finish writing readme.go
+- sniff http to estimate gcs billing
+  - or, is there a google aloud api that would do
+- better progress report during regular backups
+- disk: append to existing pack if it's not too big...
+ -  but... file system atomicity stuff... don't like the idea of modifying
+    any bits after they have landed in storage.
+    bk repack <bk dir>?
+ - can cat pack files together now. add a 'bk reindex' command?
+ - also support for gcs?
