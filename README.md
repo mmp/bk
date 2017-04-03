@@ -24,7 +24,7 @@ in turn, the probability of data corruption).
   implementation).
 * Data integrity (and corruption recovery) using Reed-Solomon encoding.
 * Direct backups to cloud storage.
-* Ability to access backups via FUSE.
+* Ability to access backups via FUSE (coming soon).
 
 # Usage
 
@@ -40,24 +40,27 @@ Google Cloud Storage:
 
 For an encrypted repository,
 ```
-% env BK_PASSPHRASE=yolo bk init --encrypted /mnt/backups
+% env BK_PASSPHRASE=yolo bk init --encrypt /mnt/backups
 ```
 Though don't do it like that, since you don't want your passphrase in your
 shell command history.
 
 To back up a directory hierarchy (e.g., your home directory):
 ```
-% bk backup /mnt/backups initial ~
+% bk backup /mnt/backups home ~
 ```
-(BK_PASSPHRASE must be set if the repository is encrytped.)
-Here, the backup is named "initial". Incremental backups are also possible:
+(BK_PASSPHRASE must be set if the repository is encrypted.)
+Here, the backup is named "home". *bk* adds the current date and time to
+the name of the backup; all available backups can be listed with "bk list".
+
+Incremental backups are also possible:
 ```
-% bk backup --base initial /mnt/backups backup-20170308 ~
+% bk backup --base home-20170403-072015 /mnt/backups home ~
 ```
 
 To restore from a backup:
 ```
-% bk restore /mnt/backups backup-20170308 /tmp/restored
+% bk restore /mnt/backups home-20170403-072015 /tmp/restored
 ```
 
 Run "bk help" for more information and additional commands.
@@ -72,7 +75,7 @@ Run "bk help" for more information and additional commands.
   System](https://pdos.csail.mit.edu/archive/lbfs/), Athicha
   Muthitacharoen, Benjie Chen, and David Mazieres: rolling hashes to break
   up bitstreams.
-* [bup](https://github.com/bup/bup): rolling hahses, hash-based archival
+* [bup](https://github.com/bup/bup): rolling hashes, hash-based archival
   storage, all wrapped up in git packfiles. *bk*'s rolling hash code comes
   from bup.
 * [Foundation](https://swtch.com/~rsc/papers/fndn-usenix2008.pdf):
@@ -112,7 +115,7 @@ without needing to read them all into memory.) OTOH, *bk* uses
 [SHAKE256](https://en.wikipedia.org/wiki/SHA-3) to hash data blobs into 32
 bytes of hash. git's choice of SHA-1 now looks [somewhat
 unfortunate](https://security.googleblog.com/2017/02/announcing-first-sha1-collision.html),
-though for personal backups, this probaby isn't something to worry much
+though for personal backups, this probably isn't something to worry much
 about.
 
 Q: Why not use bup?
