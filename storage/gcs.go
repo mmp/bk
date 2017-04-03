@@ -364,7 +364,7 @@ func (gcs *gcsBackend) upload(name string, storageClass string, data []byte) {
 		log.Fatal("%s: already exsits.", name)
 	}
 
-	for tries := 0; ; tries++ {
+	for tries := 0; tries < 4; tries++ {
 		log.Debug("%s: starting upload. Try %d.", name, tries)
 
 		// Upload the contents of data to the GCS object.
@@ -373,17 +373,13 @@ func (gcs *gcsBackend) upload(name string, storageClass string, data []byte) {
 		defer r.Close()
 		var err error
 		if _, err = io.Copy(w, r); err == nil {
-			log.Debug("copy ok")
 			if err = w.Close(); err == nil {
-				log.Debug("close ok")
 				// Success!
 				gcs.mu.Lock()
 				gcs.bytesUploaded += int64(len(data))
 				gcs.numUploads++
 				gcs.mu.Unlock()
 				return
-			} else {
-				log.Debug("close err %s", err)
 			}
 		} else {
 			w.Close()

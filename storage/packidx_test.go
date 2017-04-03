@@ -44,7 +44,7 @@ func TestPacker(t *testing.T) {
 			t.Errorf("%d: %+v", i, err)
 		}
 		if loc.PackName != packName {
-			t.Errorf("Got pack id %d, not %d", loc.PackName, packName)
+			t.Errorf("Got pack name %s, not %s", loc.PackName, packName)
 		}
 
 		b := pack[loc.Offset:]
