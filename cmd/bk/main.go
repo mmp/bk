@@ -11,6 +11,7 @@ import (
 	u "github.com/mmp/bk/util"
 	"io"
 	"os"
+	"os/signal"
 	"runtime/pprof"
 	"sort"
 	"strings"
@@ -192,6 +193,14 @@ func main() {
 		f, err := os.Create("bk.prof")
 		log.CheckError(err)
 		pprof.StartCPUProfile(f)
+
+		go func() {
+			sigchan := make(chan os.Signal, 10)
+			signal.Notify(sigchan, os.Interrupt)
+			<-sigchan
+			pprof.StopCPUProfile()
+			os.Exit(0)
+		}()
 	}
 
 	// Dispatch to the appropriate command.
