@@ -24,7 +24,7 @@ in turn, the probability of data corruption).
   implementation).
 * Data integrity (and corruption recovery) using Reed-Solomon encoding.
 * Direct backups to cloud storage.
-* Ability to access backups via FUSE (coming soon).
+* Ability to access backups via FUSE.
 
 # Usage
 

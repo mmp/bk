@@ -22,7 +22,7 @@ var log *u.Logger
 
 func usage() {
 	fmt.Printf(`usage: bk [bk flags...] <command> [command args...]
-where <command> is: backup, fsck, help, init, list, restore, restorebits, savebits.
+where <command> is: backup, fsck, help, init, list, mount, restore, restorebits, savebits.
 Run "bk help" for more detailed help.
 `)
 	os.Exit(1)
@@ -70,6 +70,9 @@ Commands and their options are:
 
   list
       List names of all backups and archived bitstreams.
+
+  mount <dir>
+      Mounts all available backups at the provided directory.
 
   restore <backup name> <target dir>
       Restore the named backup to the specified target directory.
@@ -215,6 +218,8 @@ func main() {
 		initcmd(os.Args[idx:])
 	case "list":
 		list(os.Args[idx:])
+	case "mount":
+		mount(os.Args[idx:])
 	case "restore":
 		restore(os.Args[idx:])
 	case "restorebits":
@@ -353,6 +358,31 @@ func list(args []string) {
 				strings.TrimPrefix(name, "bits-"), md[name].String())
 		}
 	}
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+func mount(args []string) {
+	if len(args) != 1 {
+		Error("usage: bk mount <dir>\n")
+	}
+
+	backend := GetStorageBackend()
+
+	var nb []namedBackup
+	for name, time := range backend.ListMetadata() {
+		if strings.HasPrefix(name, "backup-") {
+			b := backend.ReadMetadata(name)
+			r, err := NewBackupReader(storage.NewHash(b), backend)
+			if err != nil {
+				log.Error("%s", err)
+			}
+			n := strings.TrimPrefix(name, "backup-")
+			nb = append(nb, namedBackup{n, time, r})
+		}
+	}
+
+	mountFUSE(args[0], nb)
 }
 
 ///////////////////////////////////////////////////////////////////////////
