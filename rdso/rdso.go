@@ -190,11 +190,21 @@ func checkOrRestore(fn, rsfn string, log *u.Logger, restore bool) error {
 			if HashBytes(allShards[s][hc]) != rs.Hashes[s][hc] {
 				if log != nil {
 					if s < len(dataShards) {
-						log.Error("%s: data shard %d hash %d mismatch\n",
-							fn, s, hc)
+						if restore {
+							log.Warning("%s: data shard %d hash %d mismatch\n",
+								fn, s, hc)
+						} else {
+							log.Error("%s: data shard %d hash %d mismatch\n",
+								fn, s, hc)
+						}
 					} else {
-						log.Error("%s: parity shard %d hash %d mismatch\n",
-							fn, s-len(dataShards), hc)
+						if restore {
+							log.Warning("%s: parity shard %d hash %d mismatch\n",
+								fn, s-len(dataShards), hc)
+						} else {
+							log.Error("%s: parity shard %d hash %d mismatch\n",
+								fn, s-len(dataShards), hc)
+						}
 					}
 				}
 				errors++

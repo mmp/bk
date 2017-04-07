@@ -18,12 +18,12 @@ func main() {
 	log := u.NewLogger(true /*verbose*/, false /*debug*/)
 
 	seed := int64(os.Getpid())
-	log.Verbose("Seed = ", seed)
+	log.Verbose("Seed = %d", seed)
 	rand.Seed(seed)
 
 	// Make a file full of random bytes.
 	len := 64 + rand.Intn(128*1024*1024)
-	log.Verbose("File length ", len)
+	log.Verbose("File length %d", len)
 	buf := make([]byte, len)
 	_, _ = rand.Read(buf)
 
@@ -92,6 +92,7 @@ func main() {
 	if log.NErrors == 0 {
 		log.Fatal("CheckFile of corrupted file didn't fail?")
 	}
+	log.NErrors = 0
 
 	err = rdso.RestoreFile(f.Name(), f.Name()+".rs", log)
 	//defer os.Remove(f.Name() + ".recovered")
