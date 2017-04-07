@@ -209,6 +209,7 @@ func backupDirContents(dirpath string, baseEntries []DirEntry,
 		}
 
 		path := filepath.Join(dirpath, f.Name())
+		log.Debug("%s: backing up", path)
 		e, err := NewDirEntry(f)
 		if err != nil {
 			log.Warning("%s: %s", path, err)
@@ -247,15 +248,19 @@ func backupDirContents(dirpath string, baseEntries []DirEntry,
 					c, err := ioutil.ReadFile(path)
 					log.CheckError(err)
 					e.Contents = c
-				case isMedia(f):
-					// For large media files, split into big chunks (on
-					// average 256k).  We don't expect aany reuse across
-					// different files, so we might as well minimize the
-					// number of hashes needed. Note that we don't want to
-					// not split at all and use a single huge chunk for the
-					// file, as that would end up causing the whole file to
-					// be read into memory both now and at restore time,
-					// which is nice to avoid.
+				case isChunkReuseUnlikely(f):
+					// For large media files and files that are already
+					// compressed, split into big chunks (on average 256k).
+					// For these don't expect any reuse across changed
+					// versions of the files over multiple backups, so we
+					// might as well minimize the number of hashes
+					// needed.
+					//
+					// Note that we don't want to not split at all and use
+					// a single huge chunk for the file, as that would end
+					// up causing the whole file to be read into memory
+					// both now and at restore time, which is nice to
+					// avoid.
 					e.Hash = backupFileContents(path, backend, 18)
 				default:
 					e.Hash = backupFileContents(path, backend, splitBits)
@@ -275,13 +280,13 @@ func backupDirContents(dirpath string, baseEntries []DirEntry,
 	return writeDirEntries(entries, backend, splitBits)
 }
 
-func isMedia(f os.FileInfo) bool {
+func isChunkReuseUnlikely(f os.FileInfo) bool {
 	ext := strings.ToLower(filepath.Ext(f.Name()))
 	if len(ext) == 0 {
 		return false
 	}
-	for _, e := range []string{"arw", "avi", "flv", "gif", "jpeg", "jpg", "mkv",
-		"mov", "mp4", "mpeg", "mpg", "nef", "png", "raw", "wmv"} {
+	for _, e := range []string{"arw", "avi", "flv", "gif", "gz", "jpeg", "jpg", "mkv",
+		"mov", "mp4", "mpeg", "mpg", "nef", "png", "raw", "wmv", "zip"} {
 		if ext[1:] == e {
 			return true
 		}
