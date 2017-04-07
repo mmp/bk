@@ -192,8 +192,8 @@ func backupDirContents(dirpath string, baseEntries []DirEntry,
 	// Therefore, warn if we come across a directory where this may be
 	// problematic.
 	if len(baseEntries) > 1000 {
-		log.Warning("O(n^2) search with n=%d should probably be revisited",
-			len(baseEntries))
+		log.Warning("%s: O(n^2) search with n=%d should probably be revisited",
+			dirpath, len(baseEntries))
 	}
 
 	var entries []DirEntry
