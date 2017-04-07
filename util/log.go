@@ -43,6 +43,11 @@ func (l *Logger) Print(f string, args ...interface{}) {
 }
 
 func (l *Logger) Debug(f string, args ...interface{}) {
+	if l == nil {
+		fmt.Fprintf(os.Stderr, format(f, args...))
+		return
+	}
+
 	if l.debug == nil {
 		return
 	}
@@ -52,6 +57,11 @@ func (l *Logger) Debug(f string, args ...interface{}) {
 }
 
 func (l *Logger) Verbose(f string, args ...interface{}) {
+	if l == nil {
+		fmt.Fprintf(os.Stderr, format(f, args...))
+		return
+	}
+
 	if l.verbose == nil {
 		return
 	}
@@ -61,12 +71,22 @@ func (l *Logger) Verbose(f string, args ...interface{}) {
 }
 
 func (l *Logger) Warning(f string, args ...interface{}) {
+	if l == nil {
+		fmt.Fprintf(os.Stderr, format(f, args...))
+		return
+	}
+
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	fmt.Fprint(l.warning, format(f, args...))
 }
 
 func (l *Logger) Error(f string, args ...interface{}) {
+	if l == nil {
+		fmt.Fprintf(os.Stderr, format(f, args...))
+		return
+	}
+
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.NErrors++
@@ -74,6 +94,11 @@ func (l *Logger) Error(f string, args ...interface{}) {
 }
 
 func (l *Logger) Fatal(f string, args ...interface{}) {
+	if l == nil {
+		fmt.Fprintf(os.Stderr, format(f, args...))
+		return
+	}
+
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.NErrors++
@@ -90,9 +115,11 @@ func (l *Logger) Check(v bool, msg ...interface{}) {
 		return
 	}
 
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.NErrors++
+	if l != nil {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		l.NErrors++
+	}
 
 	if len(msg) == 0 {
 		fmt.Fprint(l.err, format("Check failed\n"))
@@ -110,9 +137,11 @@ func (l *Logger) CheckError(err error, msg ...interface{}) {
 		return
 	}
 
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.NErrors++
+	if l != nil {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		l.NErrors++
+	}
 
 	if len(msg) == 0 {
 		fmt.Fprint(l.err, format("Error: %+v\n", err))
