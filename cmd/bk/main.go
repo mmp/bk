@@ -46,7 +46,7 @@ Environment variables:
 
 usage: bk [bk flags...] <command> [command_options ...]
 
-General bk flags are: [--verbose] [--debug] [--profile]
+General bk flags are: [--verbose] [--debug] [--profile] [--memprofile]
 
 Commands and their options are:
   backup [--split-bits count] [--base base] <backup name> <directory>
@@ -169,6 +169,7 @@ func main() {
 	debug := false
 	verbose := false
 	profile := false
+	memprofile := false
 	idx := 1
 	for os.Args[idx][0] == '-' {
 		switch os.Args[idx] {
@@ -177,6 +178,9 @@ func main() {
 			idx++
 		case "--verbose":
 			verbose = true
+			idx++
+		case "--memprofile":
+			memprofile = true
 			idx++
 		case "--profile":
 			profile = true
@@ -202,6 +206,19 @@ func main() {
 			signal.Notify(sigchan, os.Interrupt)
 			<-sigchan
 			pprof.StopCPUProfile()
+			os.Exit(0)
+		}()
+	} else if memprofile {
+		go func() {
+			log.Print("Will write memory profile when SIGINT is received.")
+			sigchan := make(chan os.Signal, 10)
+			signal.Notify(sigchan, os.Interrupt)
+			<-sigchan
+			f, err := os.Create("bk.memprof")
+			if err != nil {
+				log.Fatal("%s", err)
+			}
+			pprof.WriteHeapProfile(f)
 			os.Exit(0)
 		}()
 	}
