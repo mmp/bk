@@ -21,13 +21,13 @@ import (
 // to the provided data before passing it along to another backend for
 // storage.
 type compressed struct {
-	backend                            Backend
-	bytesSaved, bytesProcessed         int64
-	compressedBlobs, uncompressedBlobs int
+	backend                              Backend
+	bytesSaved, bytesProcessed           int64
+	compressedChunks, uncompressedChunks int
 }
 
 // NewCompressed returns a new storage.Backend that applies gzip compression
-// to the contents of blobs stored in the provided underlying backend.
+// to the contents of chunks stored in the provided underlying backend.
 // Note: the contents of metadata files are not compressed.
 func NewCompressed(backend Backend) Backend {
 	return &compressed{backend: backend}
@@ -38,10 +38,10 @@ func (c *compressed) String() string {
 }
 
 func (c *compressed) LogStats() {
-	tot := c.compressedBlobs + c.uncompressedBlobs
+	tot := c.compressedChunks + c.uncompressedChunks
 	if tot > 0 {
-		log.Print("compressed %d / %d blobs (%2.f%%)",
-			c.compressedBlobs, tot, 100.*float64(c.compressedBlobs)/float64(tot))
+		log.Print("compressed %d / %d chunks (%2.f%%)",
+			c.compressedChunks, tot, 100.*float64(c.compressedChunks)/float64(tot))
 		log.Print("passed through %s / %s input bytes (%.2f%%)",
 			u.FmtBytes(c.bytesSaved), u.FmtBytes(c.bytesProcessed),
 			100.*float64(c.bytesSaved)/float64(c.bytesProcessed))
@@ -61,7 +61,7 @@ var writerPool = sync.Pool{
 	},
 }
 
-func (c *compressed) Write(data []byte) Hash {
+func (c *compressed) Write(chunk []byte) Hash {
 	// Compress the input to a buffer.
 	var compressed bytes.Buffer
 
@@ -70,25 +70,25 @@ func (c *compressed) Write(data []byte) Hash {
 	w.Reset(&compressed)
 	defer writerPool.Put(w)
 
-	_, err := w.Write(data)
+	_, err := w.Write(chunk)
 	log.CheckError(err)
 	err = w.Close()
 	log.CheckError(err)
 
-	c.bytesProcessed += int64(len(data))
+	c.bytesProcessed += int64(len(chunk))
 
 	// Is the compressed buffer smaller than the input?
 	var stored []byte
-	if compressed.Len() < len(data) {
-		// Yes; write out a 1 byte to indicate that the rest of the blob is
-		// indeed compressed and then save the compressed bytes.
+	if compressed.Len() < len(chunk) {
+		// Yes; write out a 1 byte to indicate that the rest of the chunk
+		// is indeed compressed and then save the compressed bytes.
 		stored = append([]byte{1}, compressed.Bytes()...)
-		c.compressedBlobs++
+		c.compressedChunks++
 	} else {
 		// No; write a 0 to indicate that the data is uncompressed before
-		// storing the original data.
-		stored = append([]byte{0}, data...)
-		c.uncompressedBlobs++
+		// storing the original chunk.
+		stored = append([]byte{0}, chunk...)
+		c.uncompressedChunks++
 	}
 	c.bytesSaved += int64(len(stored))
 	return c.backend.Write(stored)
