@@ -39,7 +39,7 @@ func NewLogger(verbose, debug bool) *Logger {
 }
 
 func (l *Logger) Print(f string, args ...interface{}) {
-	fmt.Printf("%s", format(f, args...))
+	fmt.Fprintf(os.Stderr, "%s", format(f, args...))
 }
 
 func (l *Logger) Debug(f string, args ...interface{}) {
