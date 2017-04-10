@@ -60,13 +60,16 @@ type pseudoDir struct {
 	br      *BackupReader
 }
 
-// Given an array of named backups of the form "backup_name-yymmdd-hhmmss",
+// Given an array of named backups of the form "backup_name@yyyymmddhhmmss",
 // create the corresponding *pseudoDir hierarchy.
 func createPseudoHierarchy(nb []namedBackup) *pseudoDir {
 	var root pseudoDir
 	for _, b := range nb {
-		comps := strings.Split(b.name, "-")
-		log.Check(len(comps) == 3)
+		comps := strings.Split(b.name, "@")
+		log.Check(len(comps) == 2)
+		log.Check(len(comps[1]) == 14) // yyyymmddhhmmss
+		dt := comps[1]
+		comps = []string{comps[0], dt[:4], dt[4:6], dt[6:8], dt[8:]}
 		pseudoAddRecursive(&root, comps, b)
 	}
 	return &root

@@ -5,6 +5,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/mmp/bk/storage"
@@ -159,6 +160,27 @@ func GetStorageBackend() storage.Backend {
 	return backend
 }
 
+func getLatest(name string, backend storage.Backend) (string, error) {
+	if backend.MetadataExists(name) {
+		return name, nil
+	} else if !strings.Contains(name, "@") {
+		// Find the most recent instance with this name.
+		var latestName string
+		var latestTime time.Time
+		for n, t := range backend.ListMetadata() {
+			if strings.HasPrefix(n, name) && t.After(latestTime) {
+				latestName = n
+				latestTime = t
+			}
+		}
+		if latestName != "" {
+			return latestName, nil
+		}
+	}
+
+	return "", errors.New("metadata not found")
+}
+
 ///////////////////////////////////////////////////////////////////////////
 
 func main() {
@@ -269,18 +291,22 @@ func backup(args []string) {
 	if err == flag.ErrHelp || flags.NArg() != 2 {
 		flags.Usage()
 	} else if err != nil {
-		log.Fatal("%s", err)
+		Error("%s", err)
 	}
 
 	backend := GetStorageBackend()
-	name := flags.Arg(0) + "-" + time.Now().Format("20060102-150405")
+	name := flags.Arg(0) + "@" + time.Now().Format("20060102150405")
 	dir := flags.Arg(1)
 
 	log.Check(!backend.MetadataExists("backup-" + name))
 
 	var hash storage.Hash
 	if *base != "" {
-		baseHash := lookupHash("backup-"+*base, backend)
+		*base, err = getLatest("backup-"+*base, backend)
+		if err != nil {
+			Error("%s: %s", *base, err)
+		}
+		baseHash := lookupHash(*base, backend)
 		hash = BackupDirIncremental(dir, baseHash, backend, *splitBits)
 	} else {
 		hash = BackupDir(dir, backend, *splitBits)
@@ -312,8 +338,8 @@ func fsck(args []string) {
 			sh := storage.NewMerkleHash(b)
 			sh.Fsck(backend)
 		} else if strings.HasPrefix(name, "backup-") {
-			log.Debug("Checking %s", name)
 			h := lookupHash(name, backend)
+			log.Debug("Checking %s. Hash %s", name, h)
 			r, err := NewBackupReader(h, backend)
 			if err != nil {
 				log.Error("%s", err)
@@ -410,17 +436,18 @@ func restore(args []string) {
 	}
 
 	backend := GetStorageBackend()
-	if !backend.MetadataExists("backup-" + args[0]) {
-		Error("%s: backup not found\n", args[0])
+	name, err := getLatest("backup-"+args[0], backend)
+	if err != nil {
+		log.Error("%s", err)
 	}
-	b := backend.ReadMetadata("backup-" + args[0])
+
+	b := backend.ReadMetadata(name)
 	r, err := NewBackupReader(storage.NewHash(b), backend)
 	if err != nil {
 		log.Error("%s", err)
 	}
 
-	err = r.Restore("/", args[1])
-	if err != nil {
+	if err = r.Restore("/", args[1]); err != nil {
 		log.Error("%s", err)
 	}
 	backend.LogStats()
@@ -435,23 +462,21 @@ func restorebits(args []string) {
 
 	backend := GetStorageBackend()
 
-	name := args[0]
-	if !backend.MetadataExists("bits-" + name) {
-		Error("%s: named backup not found\n", name)
+	name, err := getLatest("bits-"+args[0], backend)
+	if err != nil {
+		Error("%s: %s", name, err)
 	}
 
-	hash := storage.NewMerkleHash(backend.ReadMetadata("bits-" + name))
+	hash := storage.NewMerkleHash(backend.ReadMetadata(name))
 
 	r := hash.NewReader(nil, backend)
 	// Write the blob contents to stdout.
 	rr := &u.ReportingReader{R: r, Msg: "Restored"}
-	_, err := io.Copy(os.Stdout, rr)
-	if err != nil {
-		log.Fatal("%s: %s", name, err)
+	if _, err := io.Copy(os.Stdout, rr); err != nil {
+		Error("%s: %s", name, err)
 	}
-	err = rr.Close()
-	if err != nil {
-		log.Fatal("%s: %s", name, err)
+	if err = rr.Close(); err != nil {
+		Error("%s: %s", name, err)
 	}
 
 	backend.LogStats()
@@ -471,11 +496,11 @@ func savebits(args []string) {
 	if err == flag.ErrHelp || flags.NArg() != 1 {
 		flags.Usage()
 	} else if err != nil {
-		log.Fatal("%s", err)
+		Error("%s", err)
 	}
 
 	backend := GetStorageBackend()
-	name := flags.Arg(0) + "-" + time.Now().Format("20060102-150405")
+	name := flags.Arg(0) + "@" + time.Now().Format("20060102150405")
 	log.Check(!backend.MetadataExists("bits-" + name))
 
 	r := &u.ReportingReader{R: os.Stdin, Msg: "Read"}

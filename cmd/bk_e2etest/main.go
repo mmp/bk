@@ -121,18 +121,6 @@ func runButPossiblyKill(c string, args ...string) ([]byte, error) {
 	return out.Bytes(), err
 }
 
-func getName(b []byte) string {
-	re := regexp.MustCompile(": .*: successfully saved")
-	match := re.FindString(string(b))
-	parts := strings.Split(match, ":")
-	if len(parts) != 3 {
-		log.Fatalf("%s: match didn't split into 3 parts", match)
-	}
-
-	log.Printf("PARTS %s", parts[1])
-	return parts[1]
-}
-
 var errKilled = errors.New("killed while running")
 
 func runExpectSuccess(expected string, c string, args ...string) {
@@ -231,14 +219,14 @@ func backupTest(randomlyKill bool, iters int) {
 
 		// backup
 		var err error
-		var name string
+		name := fmt.Sprintf("bk-%d", i)
 		if randBool() && len(allNames) > 0 {
 			base := allNames[rand.Intn(len(allNames))]
-			if name, err = backupIncremental(tmpSrc, base, "bk", randomlyKill); err != nil {
+			if err = backupIncremental(tmpSrc, base, name, randomlyKill); err != nil {
 				log.Fatalf("%s\n", err)
 			}
 		} else {
-			if name, err = backup(tmpSrc, "bk", randomlyKill); err != nil {
+			if err = backup(tmpSrc, name, randomlyKill); err != nil {
 				log.Fatalf("%s\n", err)
 			}
 		}
@@ -389,39 +377,36 @@ func update(dir string) error {
 		})
 }
 
-func backup(dir string, name string, randomlyKill bool) (bkname string, err error) {
+func backup(dir string, name string, randomlyKill bool) error {
 	log.Printf("Starting backup")
 	for {
 		cmd := "bk backup " + name + " " + dir
-		var out []byte
+		var err error
 		if randomlyKill {
-			out, err = runButPossiblyKill(cmd)
+			_, err = runButPossiblyKill(cmd)
 		} else {
-			out, err = runCommand(cmd)
+			_, err = runCommand(cmd)
 		}
 
 		if err != errKilled {
-			bkname = getName(out)
-			return
+			return err
 		}
 	}
 }
 
-func backupIncremental(dir string, base string, name string,
-	randomlyKill bool) (bkname string, err error) {
+func backupIncremental(dir string, base string, name string, randomlyKill bool) error {
 	log.Printf("Starting incremental backup")
 	for {
 		cmd := "bk backup --base " + base + " " + name + " " + dir
-		var out []byte
+		var err error
 		if randomlyKill {
-			out, err = runButPossiblyKill(cmd)
+			_, err = runButPossiblyKill(cmd)
 		} else {
-			out, err = runCommand(cmd)
+			_, err = runCommand(cmd)
 		}
 
 		if err != errKilled {
-			bkname = getName(out)
-			return
+			return err
 		}
 	}
 }
