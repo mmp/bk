@@ -51,10 +51,13 @@ func TestSplitCorrectAndDistribution(t *testing.T) {
 		// slices.
 		avgLen := 1 << uint(sb)
 		expectedSlices := len(b) / avgLen
-		if sb == 8 {
-			// Ad-hoc correction factor since the minimum size requirement
-			// skews things a bit for small split sizes.
+		switch sb {
+		// Ad-hoc correction factors since the minimum size requirement
+		// skews things a bit for small split sizes.
+		case 8:
 			expectedSlices /= 3
+		case 9:
+			expectedSlices /= 2
 		}
 		if numSlices < expectedSlices/2 ||
 			numSlices > expectedSlices*3/2 {

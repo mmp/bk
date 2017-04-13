@@ -71,24 +71,24 @@ func InitBandwidthLimit(uploadBytesPerSecond, downloadBytesPerSecond int) {
 	}()
 }
 
-// rateLimitedReader is an io.ReadCloser implementation that returns no
+// rateLimitedReader is an io.Reader implementation that returns no
 // more bytes than the current value of *availableBytes.  Thus, as long as
 // the upload and download paths wrap the underlying io.Readers for local
 // files and downloads from GCS (respectively), then we should stay under
 // the bandwidth per second limit.
 type rateLimitedReader struct {
-	R              io.ReadCloser
+	R              io.Reader
 	availableBytes *int
 }
 
-func NewLimitedUploadReader(r io.ReadCloser) io.ReadCloser {
+func NewLimitedUploadReader(r io.Reader) io.Reader {
 	if uploadBandwidthLimited {
 		return rateLimitedReader{R: r, availableBytes: &availableUploadBytes}
 	}
 	return r
 }
 
-func NewLimitedDownloadReader(r io.ReadCloser) io.ReadCloser {
+func NewLimitedDownloadReader(r io.Reader) io.Reader {
 	if downloadBandwidthLimited {
 		return rateLimitedReader{R: r, availableBytes: &availableDownloadBytes}
 	}
@@ -135,8 +135,4 @@ func (lr rateLimitedReader) Read(dst []byte) (int, error) {
 	}
 
 	return read, err
-}
-
-func (lr rateLimitedReader) Close() error {
-	return lr.R.Close()
 }

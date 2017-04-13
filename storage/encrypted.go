@@ -189,11 +189,6 @@ func (eb *encrypted) Read(hash Hash) (io.ReadCloser, error) {
 	return &readerAndCloser{makeDecryptingReader(eb.key, iv[:], r), r}, nil
 }
 
-type readerAndCloser struct {
-	io.Reader
-	io.Closer
-}
-
 func (eb *encrypted) WriteMetadata(name string, data []byte) {
 	eb.backend.WriteMetadata(name, data)
 }

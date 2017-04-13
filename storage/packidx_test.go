@@ -13,19 +13,17 @@ import (
 func TestPacker(t *testing.T) {
 	var idx, pack []byte
 	var blobs [][]byte
-	var packer BlobPacker
 
-	var sumLen []int
-	sumLen = append(sumLen, 0)
+	curLen := 0
 
 	const nChunks = 1000
 	for i := 0; i < nChunks; i++ {
 		b := make([]byte, rand.Intn(65536))
 		rand.Read(b)
 		blobs = append(blobs, b)
-		sumLen = append(sumLen, sumLen[len(sumLen)-1]+len(b))
 
-		i, p := packer.Pack(HashBytes(b), b)
+		i, p := PackBlob(HashBytes(b), b, int64(curLen))
+		curLen += len(p)
 
 		idx = append(idx, i...)
 		pack = append(pack, p...)

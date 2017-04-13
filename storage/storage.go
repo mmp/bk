@@ -7,7 +7,6 @@ package storage
 import (
 	"encoding/hex"
 	"errors"
-	"github.com/mmp/bk/rdso"
 	u "github.com/mmp/bk/util"
 	"golang.org/x/crypto/sha3"
 	"io"
@@ -138,50 +137,9 @@ func errorIfExists(path string) {
 	}
 }
 
-// robustWriter implements the io.Writer interface for writing to a file
-// on disk. Its implementation of Write never returns an error; any
-// errors during writing are treated as fatal errors. Further, it is written
-// so that after a call to Close returns, the caller can be certain that
-// all of the bytes written have successfully landed on disk.
-type robustWriter struct {
-	file *os.File
-	path string
-}
-
-func newRobustWriter(path string) *robustWriter {
-	// Open a temporary file to hold intermediate writes.
-	errorIfExists(path)
-	tmpPath := path + ".tmp"
-	errorIfExists(tmpPath)
-	f, err := os.Create(tmpPath)
-	log.CheckError(err)
-
-	return &robustWriter{file: f, path: path}
-}
-
-func (w *robustWriter) Write(b []byte) (int, error) {
-	n, err := w.file.Write(b)
-	log.CheckError(err)
-	return n, err
-}
-
-func (w *robustWriter) Close() {
-	// When it's time to close the writer, first make sure that all of the
-	// writes have landed on disk in the temporary file and then rename it
-	// to the final filename that we wanted originally. Only once the rename
-	// has succeeded can we be sure that everything is safely on disk.
-	log.CheckError(w.file.Sync())
-	log.CheckError(w.file.Close())
-
-	// Reed-Solomon encode the temporary file before we rename it.
-	const nDataShards = 17
-	const nParityShards = 3
-	const hashRate = 1024 * 1024
-	tmpPath := w.path + ".tmp"
-	rdso.EncodeFile(tmpPath, w.path+".rs", nDataShards, nParityShards,
-		hashRate)
-
-	log.CheckError(os.Rename(tmpPath, w.path))
+type readerAndCloser struct {
+	io.Reader
+	io.Closer
 }
 
 ///////////////////////////////////////////////////////////////////////////
