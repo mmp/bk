@@ -27,13 +27,13 @@ type encpair struct {
 }
 
 // encrypted implements the storage.Backend interface. It encrypts /
-// decrypts blob data as it passes through the Read() and Write() methods.
+// decrypts chunk data as it passes through the Read() and Write() methods.
 type encrypted struct {
 	backend Backend
 	key     []byte
-	// toEncrypted is a map from hashes of unencrypted blobs to hashes of
+	// toEncrypted is a map from hashes of unencrypted chunks to hashes of
 	// encrypted versions of them, if we already have them stored.  Because
-	// we use a unique random new IV every time a new blob comes in to
+	// we use a unique random new IV every time a new chunk comes in to
 	// Write(), we need to maintain this map explicitly in for
 	// deduplication to work.
 	toEncrypted map[Hash]Hash
@@ -54,7 +54,7 @@ const toEncryptedPrefix = "toencrypted-"
 const ivLength = aes.BlockSize
 
 // NewEncrypted returns a storage.Backend that applies AES encryption
-// to the blob data stored in the underlying storage.Backend.
+// to the chunk data stored in the underlying storage.Backend.
 // Note: metadata contents and the names of named hashes are not encrypted.
 func NewEncrypted(backend Backend, passphrase string) Backend {
 	eb := &encrypted{backend: backend,
@@ -126,7 +126,7 @@ func (eb *encrypted) Write(data []byte) Hash {
 	// Generate a new random initialization vector and encrypt the data.
 	iv := getRandomBytes(ivLength)
 	enc := encryptBytes(eb.key, iv, data)
-	// In the blob that's stored, first write out the IV, then the
+	// In the chunk that's stored, first write out the IV, then the
 	// encrypted data.
 	henc := eb.backend.Write(append(iv, enc...))
 
@@ -140,7 +140,7 @@ func (eb *encrypted) Write(data []byte) Hash {
 }
 
 func (eb *encrypted) SyncWrites() {
-	// Make sure all of the blobs are stored.
+	// Make sure all of the chunks are stored.
 	eb.backend.SyncWrites()
 
 	// Store the log of any new mappings from unencrypted -> encrypted
@@ -179,7 +179,7 @@ func (eb *encrypted) Read(hash Hash) (io.ReadCloser, error) {
 		return r, err
 	}
 	// First read the initialization vector, which we stored at the
-	// start of the stored blob.
+	// start of the stored chunk.
 	var iv [ivLength]byte
 	_, err = io.ReadFull(r, iv[:])
 	if err != nil {
@@ -223,7 +223,7 @@ func decodeHexString(s string) []byte {
 // Encrypt the given plaintext using the given encryption key 'key' and
 // initialization vector 'iv'. The initialization vector should be 16 bytes
 // (the AES block-size), and should be randomly generated and unique for
-// each blob of data that's encrypted.
+// each chunk of data that's encrypted.
 func encryptBytes(key []byte, iv []byte, plaintext []byte) []byte {
 	r, err := ioutil.ReadAll(makeEncryptingReader(key, iv,
 		bytes.NewReader(plaintext)))
