@@ -28,40 +28,60 @@ in turn, the probability of data corruption).
 
 # Usage
 
+Set your BK_DIR environment variable either to a local directory or to a
+Google Cloud Storage bucket name of the form "gs://somebucketname".
+
 To set up a backup repository, run:
 ```
-% bk init /mnt/backups
+% bk init
 ```
 It's assumed that the target directory exists but is empty. To backup to
 Google Cloud Storage:
 ```
-% bk init gs://somebucketname
+% env BK_GCS_PROJECT_ID=myproject-1234 bk init 
 ```
 
 For an encrypted repository,
 ```
-% env BK_PASSPHRASE=yolo bk init --encrypt /mnt/backups
+% env BK_PASSPHRASE=yolo bk init --encrypt
 ```
 Though don't do it like that, since you don't want your passphrase in your
 shell command history.
 
 To back up a directory hierarchy (e.g., your home directory):
 ```
-% bk backup /mnt/backups home ~
+% bk backup home ~
 ```
 (BK_PASSPHRASE must be set if the repository is encrypted.)
 Here, the backup is named "home". *bk* adds the current date and time to
-the name of the backup; all available backups can be listed with "bk list".
+the name of the backup; all available backups can be listed with "bk
+list".
 
-Incremental backups are also possible:
+Backups can be referred to via their full name and time as provided by "bk
+list"--e.g. "home@20170413104506". If just the base backup name is given
+("home"), the the most recent backup with that base name used.
+
+Incremental backups can be performed using the --base argument; the
+following uses the most recent backup from the set named "home" as the
+baseline.
 ```
-% bk backup --base home-20170403-072015 /mnt/backups home ~
+% bk backup --base home home ~
 ```
+Note that incremental backups only make backups run faster (by not scanning
+the contents of every file); there is no space benefit, since *bk* applies
+low-level deduplication to the data it stores. 
 
 To restore from a backup:
 ```
-% bk restore /mnt/backups home-20170403-072015 /tmp/restored
+% bk restore home /tmp/restored
 ```
+
+To mount all backups as a FUSE directory (if you have FUSE installed):
+```
+% bk mount /mnt
+```
+The resulting hierarchy has the structure
+"backup_name/year/month/day/hhmmss".
 
 Run "bk help" for more information and additional commands.
 
@@ -130,7 +150,7 @@ Q: Your use of Check() and CheckError() isn't idiomatic Go error handling.
 
 A: That's not a question. For a backup system, I believe that most errors
 should cause the system to immediately stop and fail obviously rather than
-making an attempt to recover (since the recovery code paths won't be well
+make an attempt to recover (since the recovery code paths won't be well
 exercised and are thus likely to be buggy). Given this decision, I'd rather
 have those checks take a single line of code rather than three lines to
 test the error against nil and then panic.

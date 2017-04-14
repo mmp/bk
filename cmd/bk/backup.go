@@ -83,7 +83,7 @@ type DirEntry struct {
 	// their children directly into this?
 	Contents []byte
 	// For a file, if Contents is nil, Hash points to its contents.  For a
-	// directory, it gives theserialized []DirEntry for the files in a
+	// directory, it gives the serialized []DirEntry for the files in a
 	// directory.
 	Hash storage.MerkleHash
 	// Not used for directories or symlinks.
