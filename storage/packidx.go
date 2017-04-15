@@ -312,6 +312,11 @@ func newPackFileBackend(fs fileStorage, maxPackSize int64) Backend {
 	// TODO: do in parallel?
 	log.Verbose("Starting to read indices.")
 	pb.fs.ForFiles("indices/", func(n string, created time.Time) {
+		if !strings.HasSuffix(n, ".idx") {
+			log.Warning("%s: non .idx file found in indices/ directory", n)
+			return
+		}
+
 		idx, err := pb.fs.ReadFile(n, 0, 0)
 		log.CheckError(err)
 
@@ -496,6 +501,11 @@ func (pb *packFileBackend) Fsck() {
 	// Go through all of the pack files and make sure all blobs are present
 	// in an index.
 	pb.fs.ForFiles("packs/", func(n string, created time.Time) {
+		if !strings.HasSuffix(n, ".pack") {
+			log.Warning("%s: non .pack file found in packs/ directory", n)
+			return
+		}
+
 		// It's slightly annoying to read the whole pack file into memory
 		// here, but they're not too huge. If this was a problem, we could
 		// implement an io.Reader that grabbed pieces of it in turn using
