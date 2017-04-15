@@ -210,6 +210,9 @@ func (g *gcsFileStorage) upload(name string, storageClass string, buf []byte) er
 	log.Verbose("%s: starting upload", name)
 
 	w := tmpObj.NewWriter(g.ctx)
+	// Make it upload along the way rather than waiting until the rate
+	// limiting code eventually gives it all the data.
+	w.ChunkSize = 256 * 1024
 	defer tmpObj.Delete(g.ctx)
 	r := NewLimitedUploadReader(bytes.NewReader(buf))
 	_, err := io.Copy(w, r)
