@@ -24,7 +24,7 @@ import (
 // we can retry from scratch for failures.
 const maxGCSPackSize = 128 * 1024 * 1024
 
-// Implements the fileStorage interface to store files in Google Cloud
+// Implements the FileStorage interface to store files in Google Cloud
 // Storage.
 type gcsFileStorage struct {
 	ctx    context.Context
@@ -155,7 +155,7 @@ func retry(n string, f func() error) error {
 	}
 }
 
-func (g *gcsFileStorage) CreateFile(name string) io.WriteCloser {
+func (g *gcsFileStorage) CreateFile(name string) RobustWriteCloser {
 	// It seems that using Object.If(storage.Conditions{DoesNotExist:true})
 	// ends up uploading the entire file contents before catching the "oh,
 	// it already exists" error upon the Close() call.  Good times.
@@ -176,22 +176,27 @@ func (g *gcsFileStorage) CreateFile(name string) io.WriteCloser {
 	}
 }
 
-// gcsWriter implements io.WriteCloser.  It buffers the entire contents of
-// the file before actually doing the upload to GCS in its Close()
+// gcsWriter implements RobustWriteCloser.  It buffers the entire contents
+// of the file before actually doing the upload to GCS in its Close()
 // method. (This makes it easy to retry on temporary failures.)
 type gcsWriter struct {
-	bytes.Buffer
+	buf          bytes.Buffer
 	name         string
 	storageClass string
 	g            *gcsFileStorage
 }
 
-func (gw *gcsWriter) Close() error {
+func (gw *gcsWriter) Write(b []byte) {
+	// bytes.Buffer.Write is documented to never return an error (it panics
+	// on OOM).
+	_, _ = gw.buf.Write(b)
+}
+
+func (gw *gcsWriter) Close() {
 	err := retry(gw.name, func() error {
-		return gw.g.upload(gw.name, gw.storageClass, gw.Bytes())
+		return gw.g.upload(gw.name, gw.storageClass, gw.buf.Bytes())
 	})
 	log.CheckError(err, "%s: %s", gw.name, err)
-	return nil
 }
 
 var castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
@@ -217,15 +222,13 @@ func (g *gcsFileStorage) upload(name string, storageClass string, buf []byte) er
 	// limiting code eventually gives it all the data.
 	w.ChunkSize = 256 * 1024
 	defer tmpObj.Delete(g.ctx)
-	r := NewLimitedUploadReader(bytes.NewReader(buf))
-	_, err := io.Copy(w, r)
 
-	if err != nil {
+	r := NewLimitedUploadReader(bytes.NewReader(buf))
+	if _, err := io.Copy(w, r); err != nil {
 		w.Close()
 		return err
 	}
-
-	if err = w.Close(); err != nil {
+	if err := w.Close(); err != nil {
 		return err
 	}
 
@@ -244,12 +247,12 @@ func (g *gcsFileStorage) upload(name string, storageClass string, buf []byte) er
 			localCrc, gcsCrc)
 	}
 
-	// Make the final object and copy from the temporary one.
+	// Make the final object by copying from the temporary one.
 	copier := obj.CopierFrom(tmpObj)
 	copier.StorageClass = storageClass
 	// No idea why it insists this be set directly for the copier to work.
 	copier.ContentType = "application/octet-stream"
 
-	_, err = copier.Run(g.ctx)
+	_, err := copier.Run(g.ctx)
 	return err
 }

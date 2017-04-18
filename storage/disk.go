@@ -19,7 +19,7 @@ import (
 // which makes sure things aren't too bad.
 const maxDiskPackFileSize = 1 << 31
 
-// disk implements the fileStorage interface to store data in a directory
+// disk implements the FileStorage interface to store data in a directory
 // in the local file system.
 type disk struct {
 	dir string
@@ -86,8 +86,8 @@ func (db *disk) Fsck() bool {
 	return true
 }
 
-func (db *disk) CreateFile(name string) io.WriteCloser {
-	return newRobustWriter(filepath.Join(db.dir, name))
+func (db *disk) CreateFile(name string) RobustWriteCloser {
+	return newRobustDiskWriter(filepath.Join(db.dir, name))
 }
 
 func (db *disk) ReadFile(name string, offset int64, length int64) ([]byte, error) {
@@ -123,7 +123,7 @@ type robustWriter struct {
 	path string
 }
 
-func newRobustWriter(path string) *robustWriter {
+func newRobustDiskWriter(path string) RobustWriteCloser {
 	errorIfExists(path)
 
 	// Open a temporary file to hold the intermediate writes.
@@ -135,13 +135,12 @@ func newRobustWriter(path string) *robustWriter {
 	return &robustWriter{f, path}
 }
 
-func (w *robustWriter) Write(b []byte) (int, error) {
-	n, err := w.file.Write(b)
+func (w *robustWriter) Write(b []byte) {
+	_, err := w.file.Write(b)
 	log.CheckError(err)
-	return n, err
 }
 
-func (w *robustWriter) Close() error {
+func (w *robustWriter) Close() {
 	// When it's time to close the writer, first make sure that all of the
 	// writes have landed on disk in the temporary file.
 	log.CheckError(w.file.Sync())
@@ -160,7 +159,4 @@ func (w *robustWriter) Close() error {
 	// once the rename has succeeded can we be sure that everything is
 	// safely on disk.
 	log.CheckError(os.Rename(tmpPath, w.path))
-
-	// Never return an error.
-	return nil
 }

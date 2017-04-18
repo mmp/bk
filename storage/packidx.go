@@ -235,13 +235,13 @@ func fsckPackFile(r io.Reader, allHashes map[Hash]struct{}) {
 
 ///////////////////////////////////////////////////////////////////////////
 
-// packFileBackend implements the storage.Backend interface, but depends on
-// an implementation of the fileStorage interface to handle the mechanics
-// of storing and retrieving files.  In turn, this allows us to implement
-// functionality that's common between the disk and GCS backends in a single
-// place.
-type packFileBackend struct {
-	fs    fileStorage
+// PackFileBackend implements the storage.Backend interface, but depends on
+// an implementation of the FileStorage interface to handle the mechanics
+// of storing and retrieving files.  In turn, we can implement
+// functionality that's common between the disk and GCS backends in a
+// single place.
+type PackFileBackend struct {
+	fs    FileStorage
 	start time.Time
 
 	metadataNames map[string]time.Time
@@ -268,25 +268,35 @@ type fileWrite struct {
 	b    []byte
 }
 
-// fileStorage is a simple abstraction for a storage system.
-type fileStorage interface {
-	// CreateFile returns a io.WriteCloser for a file with the given name;
+// RobustWriteCloser is like a io.WriteCloser, except it treats any errors
+// as fatal errors and thus doesn't have error return values. Write()
+// always writes all bytes given to it, and after a call to Close()
+// returns, the contents have successfully been committed to storage.
+type RobustWriteCloser interface {
+	Write(b []byte)
+	Close()
+}
+
+// FileStorage is a simple abstraction for a storage system.
+type FileStorage interface {
+	// CreateFile returns a RobustWriteCloser for a file with the given name;
 	// a fatal error occurs if a file with that name already exists.
-	CreateFile(name string) io.WriteCloser
+	CreateFile(name string) RobustWriteCloser
 
 	// ReadFile returns the contents of the given file. If length is zero, the
 	// whole file contents are returned; otherwise the segment starting at offset
 	// with given length is returned.
 	//
-	// In principle it would be nice to return e.g. an io.ReadCloser, but the GCS
-	// backend has a bunch of complexity around retrying on transient failures
-	// that seems easier to include in its ReadFile implementation than to whip
-	// up a custom ReadCloser to hide that.
+	// TODO: it might be more idiomatic to return e.g. an io.ReadCloser,
+	// but between the GCS backend needing to be able to retry reads and
+	// the fact that callers usually want a []byte in the end anyway, this
+	// seems more straightforward overall.
 	ReadFile(name string, offset int64, length int64) ([]byte, error)
 
-	// ForFiles calls the given callback function for all files with the given
-	// directory prefix, providing the file path and its creation time.
-	ForFiles(prefix string, f func(name string, created time.Time))
+	// ForFiles calls the given callback function for all files with the
+	// given directory prefix, providing the file path and its creation
+	// time.
+	ForFiles(prefix string, f func(path string, created time.Time))
 
 	String() string
 
@@ -296,8 +306,8 @@ type fileStorage interface {
 	Fsck() bool
 }
 
-func newPackFileBackend(fs fileStorage, maxPackSize int64) Backend {
-	pb := &packFileBackend{
+func newPackFileBackend(fs FileStorage, maxPackSize int64) Backend {
+	pb := &PackFileBackend{
 		fs:          fs,
 		start:       time.Now(),
 		maxPackSize: maxPackSize,
@@ -334,11 +344,11 @@ func newPackFileBackend(fs fileStorage, maxPackSize int64) Backend {
 	return pb
 }
 
-func (pb *packFileBackend) String() string {
+func (pb *PackFileBackend) String() string {
 	return pb.fs.String()
 }
 
-func (pb *packFileBackend) LogStats() {
+func (pb *PackFileBackend) LogStats() {
 	delta := time.Now().Sub(pb.start)
 	if pb.numSaves > 0 {
 		upBytesPerSec := float64(pb.bytesSaved) / delta.Seconds()
@@ -356,10 +366,10 @@ func (pb *packFileBackend) LogStats() {
 	}
 }
 
-func (pb *packFileBackend) Write(chunk []byte) Hash {
+func (pb *PackFileBackend) Write(chunk []byte) Hash {
 	hash := HashBytes(chunk)
 	if _, err := pb.chunkIndex.Lookup(hash); err == nil {
-		// It's already in storage.
+		log.Debug("%s: hash already stored", hash)
 		return hash
 	}
 
@@ -391,7 +401,7 @@ func (pb *packFileBackend) Write(chunk []byte) Hash {
 	return hash
 }
 
-func (pb *packFileBackend) launchWriters() {
+func (pb *PackFileBackend) launchWriters() {
 	log.Check(pb.packWriteChan == nil)
 	// Allow a fair amount of buffering so that backups can continue
 	// walking the local filesystem while waiting for writes to land. This
@@ -405,15 +415,15 @@ func (pb *packFileBackend) launchWriters() {
 	go writeWorker(pb.fs, pb.idxWriteChan, &pb.wg)
 }
 
-func writeWorker(fs fileStorage, ch chan fileWrite, wg *sync.WaitGroup) {
+func writeWorker(fs FileStorage, ch chan fileWrite, wg *sync.WaitGroup) {
 	// path stores the name of the file that w is writing to.
 	var path string
-	var w io.WriteCloser
+	var w RobustWriteCloser
 	for {
 		item, ok := <-ch
 		if !ok {
 			if w != nil {
-				log.CheckError(w.Close())
+				w.Close()
 			}
 			wg.Done()
 			return
@@ -423,19 +433,18 @@ func writeWorker(fs fileStorage, ch chan fileWrite, wg *sync.WaitGroup) {
 			// A new filename has arrived. We're done with the current file
 			// (and should receive no more writes for it in the future).
 			if w != nil {
-				log.CheckError(w.Close())
+				w.Close()
 			}
 			path = item.path
 			w = fs.CreateFile(item.path)
 		}
 
-		_, err := w.Write(item.b)
-		log.CheckError(err)
+		w.Write(item.b)
 	}
 }
 
-func (pb *packFileBackend) SyncWrites() {
-	// Close the chans and wait for the writers to train them and land all
+// Close the chans and wait for the writers to train them and land all
+func (pb *PackFileBackend) SyncWrites() {
 	// of their writes to storage.
 	close(pb.packWriteChan)
 	close(pb.idxWriteChan)
@@ -451,7 +460,7 @@ func (pb *packFileBackend) SyncWrites() {
 	pb.launchWriters()
 }
 
-func (pb *packFileBackend) Read(hash Hash) (io.ReadCloser, error) {
+func (pb *PackFileBackend) Read(hash Hash) (io.ReadCloser, error) {
 	if loc, err := pb.chunkIndex.Lookup(hash); err != nil {
 		return nil, err
 	} else {
@@ -475,16 +484,16 @@ func (pb *packFileBackend) Read(hash Hash) (io.ReadCloser, error) {
 	}
 }
 
-func (pb *packFileBackend) HashExists(hash Hash) bool {
+func (pb *PackFileBackend) HashExists(hash Hash) bool {
 	_, err := pb.chunkIndex.Lookup(hash)
 	return err == nil
 }
 
-func (pb *packFileBackend) Hashes() map[Hash]struct{} {
+func (pb *PackFileBackend) Hashes() map[Hash]struct{} {
 	return pb.chunkIndex.Hashes()
 }
 
-func (pb *packFileBackend) Fsck() {
+func (pb *PackFileBackend) Fsck() {
 	if pb.fs.Fsck() == false {
 		return
 	}
@@ -516,7 +525,7 @@ func (pb *packFileBackend) Fsck() {
 	})
 }
 
-func (pb *packFileBackend) WriteMetadata(name string, contents []byte) {
+func (pb *PackFileBackend) WriteMetadata(name string, contents []byte) {
 	if _, ok := pb.metadataNames[name]; ok {
 		log.Fatal("%s: metadata already exists", name)
 	}
@@ -527,22 +536,21 @@ func (pb *packFileBackend) WriteMetadata(name string, contents []byte) {
 	pb.metadataNames[name] = time.Now()
 
 	w := pb.fs.CreateFile("metadata/" + name)
-	_, err := w.Write(contents)
-	log.CheckError(err)
-	log.CheckError(w.Close())
+	w.Write(contents)
+	w.Close()
 }
 
-func (pb *packFileBackend) ReadMetadata(name string) []byte {
+func (pb *PackFileBackend) ReadMetadata(name string) []byte {
 	b, err := pb.fs.ReadFile("metadata/"+name, 0, 0)
 	log.CheckError(err)
 	return b
 }
 
-func (pb *packFileBackend) ListMetadata() map[string]time.Time {
+func (pb *PackFileBackend) ListMetadata() map[string]time.Time {
 	return pb.metadataNames
 }
 
-func (pb *packFileBackend) MetadataExists(name string) bool {
+func (pb *PackFileBackend) MetadataExists(name string) bool {
 	_, ok := pb.metadataNames[name]
 	return ok
 }
