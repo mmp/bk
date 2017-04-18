@@ -342,14 +342,14 @@ func (pb *packFileBackend) LogStats() {
 	delta := time.Now().Sub(pb.start)
 	if pb.numSaves > 0 {
 		upBytesPerSec := float64(pb.bytesSaved) / delta.Seconds()
-		log.Print("stored %s bytes in %d writes (avg %s, %s/s)",
+		log.Print("stored %s of chunks in %d writes (avg %s, %s/s)",
 			u.FmtBytes(pb.bytesSaved), pb.numSaves,
 			u.FmtBytes(pb.bytesSaved/int64(pb.numSaves)),
 			u.FmtBytes(int64(upBytesPerSec)))
 	}
 	if pb.numReads > 0 {
 		downBytesPerSec := float64(pb.bytesRead) / delta.Seconds()
-		log.Print("read %s bytes in %d reads (avg %s, %s/s)",
+		log.Print("read %s in %d reads (avg %s, %s/s)",
 			u.FmtBytes(pb.bytesRead), pb.numReads,
 			u.FmtBytes(pb.bytesRead/int64(pb.numReads)),
 			u.FmtBytes(int64(downBytesPerSec)))

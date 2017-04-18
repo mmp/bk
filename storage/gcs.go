@@ -44,8 +44,6 @@ type GCSOptions struct {
 }
 
 func NewGCS(options GCSOptions) Backend {
-	log.Check(options.ProjectId != "")
-
 	g := &gcsFileStorage{ctx: context.Background()}
 
 	var err error
@@ -60,6 +58,7 @@ func NewGCS(options GCSOptions) Backend {
 			loc = "us-central1"
 		}
 		log.Verbose("%s: creating bucket @ %s", options.BucketName, loc)
+		log.Check(options.ProjectId != "")
 		err := g.bucket.Create(g.ctx, options.ProjectId,
 			&gcs.BucketAttrs{Location: loc})
 		log.CheckError(err)
@@ -133,6 +132,10 @@ func (g *gcsFileStorage) ReadFile(name string, offset, length int64) ([]byte, er
 	return b, err
 }
 
+func isTemporary(code int) bool {
+	return code == 429 || (code >= 500 && code < 600)
+}
+
 func retry(n string, f func() error) error {
 	const maxTries = 5
 	for tries := 0; ; tries++ {
@@ -142,7 +145,7 @@ func retry(n string, f func() error) error {
 			return err
 		}
 
-		if err, ok := err.(*googleapi.Error); ok && (err.Code == 429 || (err.Code >= 500 && err.Code < 600)) {
+		if err, ok := err.(*googleapi.Error); ok && isTemporary(err.Code) {
 			// Possibly temporary error; sleep and retry.
 			log.Warning("%s: sleeping due to error %s", n, err.Error())
 			time.Sleep(time.Duration(100*(tries+1)) * time.Millisecond)
@@ -237,7 +240,8 @@ func (g *gcsFileStorage) upload(name string, storageClass string, buf []byte) er
 		// that the data was most likely corrupted over the network during
 		// the upload.  The other possibility is that a bit flip corrupted
 		// it in local memory, so maybe best to just always fail hard?
-		log.Fatal("CRC32 checksum mismatch. Local: %d, GCS: %d", localCrc, gcsCrc)
+		log.Fatal("%s: CRC32 checksum mismatch. Local: %d, GCS: %d", tmpName,
+			localCrc, gcsCrc)
 	}
 
 	// Make the final object and copy from the temporary one.

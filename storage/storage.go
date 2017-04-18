@@ -153,7 +153,7 @@ func NewHashesReader(hashes []Hash, sem chan bool, backend Backend) io.ReadClose
 	// If it's just one hash, don't do anything fancy.
 	if len(hashes) == 1 {
 		r, err := backend.Read(hashes[0])
-		log.CheckError(err)
+		log.CheckError(err, "%s: %s", hashes[0], err)
 		return r
 	}
 

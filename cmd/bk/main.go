@@ -291,7 +291,7 @@ func backup(args []string) {
 	if err == flag.ErrHelp || flags.NArg() != 2 {
 		flags.Usage()
 	} else if err != nil {
-		Error("%s", err)
+		Error("%s\n", err)
 	}
 
 	backend := GetStorageBackend()
@@ -304,7 +304,7 @@ func backup(args []string) {
 	if *base != "" {
 		*base, err = getLatest("backup-"+*base, backend)
 		if err != nil {
-			Error("%s: %s", *base, err)
+			Error("--base: %s\n", err)
 		}
 		baseHash := lookupHash(*base, backend)
 		hash = BackupDirIncremental(dir, baseHash, backend, *splitBits)
@@ -342,7 +342,7 @@ func fsck(args []string) {
 			log.Debug("Checking %s. Hash %s", name, h)
 			r, err := NewBackupReader(h, backend)
 			if err != nil {
-				log.Error("%s", err)
+				log.Error("%s\n", err)
 			}
 			r.Fsck()
 		}
@@ -418,7 +418,7 @@ func mount(args []string) {
 			b := backend.ReadMetadata(name)
 			r, err := NewBackupReader(storage.NewHash(b), backend)
 			if err != nil {
-				log.Error("%s", err)
+				log.Error("%s\n", err)
 			}
 			n := strings.TrimPrefix(name, "backup-")
 			nb = append(nb, namedBackup{n, time, r})
@@ -438,17 +438,17 @@ func restore(args []string) {
 	backend := GetStorageBackend()
 	name, err := getLatest("backup-"+args[0], backend)
 	if err != nil {
-		log.Error("%s", err)
+		log.Error("%s\n", err)
 	}
 
 	b := backend.ReadMetadata(name)
 	r, err := NewBackupReader(storage.NewHash(b), backend)
 	if err != nil {
-		log.Error("%s", err)
+		log.Error("%s\n", err)
 	}
 
 	if err = r.Restore("/", args[1]); err != nil {
-		log.Error("%s", err)
+		log.Error("%s\n", err)
 	}
 	backend.LogStats()
 }
@@ -464,7 +464,7 @@ func restorebits(args []string) {
 
 	name, err := getLatest("bits-"+args[0], backend)
 	if err != nil {
-		Error("%s: %s", name, err)
+		Error("%s: %s\n", name, err)
 	}
 
 	hash := storage.NewMerkleHash(backend.ReadMetadata(name))
@@ -473,10 +473,10 @@ func restorebits(args []string) {
 	// Write the blob contents to stdout.
 	rr := &u.ReportingReader{R: r, Msg: "Restored"}
 	if _, err := io.Copy(os.Stdout, rr); err != nil {
-		Error("%s: %s", name, err)
+		Error("%s: %s\n", name, err)
 	}
 	if err = rr.Close(); err != nil {
-		Error("%s: %s", name, err)
+		Error("%s: %s\n", name, err)
 	}
 
 	backend.LogStats()
@@ -496,7 +496,7 @@ func savebits(args []string) {
 	if err == flag.ErrHelp || flags.NArg() != 1 {
 		flags.Usage()
 	} else if err != nil {
-		Error("%s", err)
+		Error("%s\n", err)
 	}
 
 	backend := GetStorageBackend()
