@@ -285,29 +285,3 @@ func (r *parallelReader) Close() error {
 	_, err := ioutil.ReadAll(r)
 	return err
 }
-
-///////////////////////////////////////////////////////////////////////////
-// Consistency checking
-
-func fsckHash(hash Hash, backend Backend) {
-	rc, err := backend.Read(hash)
-	if err != nil {
-		log.Error("%s: %s", hash, err)
-		return
-	}
-
-	chunk, err := ioutil.ReadAll(rc)
-	if err != nil {
-		rc.Close()
-		log.Error("%s: %s", hash, err)
-		return
-	}
-
-	if HashBytes(chunk) != hash {
-		log.Error("%s: hash mismatch", hash)
-	}
-
-	if err = rc.Close(); err != nil {
-		log.Error("%s: %s", hash, err)
-	}
-}

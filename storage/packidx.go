@@ -221,18 +221,6 @@ func decodeOneBlob(r byteAndRegularReader) ([]byte, error) {
 	return chunk, nil
 }
 
-func fsckPackFile(r io.Reader, allHashes map[Hash]struct{}) {
-	err := DecodePackFile(r, func(chunk []byte) {
-		hash := HashBytes(chunk)
-		if _, ok := allHashes[hash]; !ok {
-			log.Error("%s: hash found in pack file, but not in index", hash)
-		}
-	})
-	if err != nil {
-		log.Error("%s", err)
-	}
-}
-
 ///////////////////////////////////////////////////////////////////////////
 
 // PackFileBackend implements the storage.Backend interface, but depends on
@@ -478,7 +466,9 @@ func (pb *PackFileBackend) Read(hash Hash) (io.ReadCloser, error) {
 		if err != nil {
 			return nil, err
 		}
-		log.Check(HashBytes(chunk) == hash)
+		if HashBytes(chunk) != hash {
+			return nil, ErrHashMismatch
+		}
 
 		return ioutil.NopCloser(bytes.NewReader(chunk)), nil
 	}
@@ -504,7 +494,23 @@ func (pb *PackFileBackend) Fsck() {
 	log.Verbose("Checking the availability and integrity of %d blobs.",
 		len(allHashes))
 	for hash := range allHashes {
-		fsckHash(hash, pb)
+		// Read() makes sure the hash matches the hash of the contents.
+		rc, err := pb.Read(hash)
+		if err != nil {
+			log.Error("%s: %s", hash, err)
+			continue
+		}
+
+		_, err = ioutil.ReadAll(rc)
+		if err != nil {
+			rc.Close()
+			log.Error("%s: %s", hash, err)
+			continue
+		}
+
+		if err = rc.Close(); err != nil {
+			log.Error("%s: %s", hash, err)
+		}
 	}
 
 	// Go through all of the pack files and make sure all blobs are present
@@ -521,7 +527,15 @@ func (pb *PackFileBackend) Fsck() {
 		// the (start, length) arguments to ReadFile().
 		pack, err := pb.fs.ReadFile(n, 0, 0)
 		log.CheckError(err)
-		fsckPackFile(bytes.NewReader(pack), allHashes)
+		err = DecodePackFile(bytes.NewReader(pack), func(chunk []byte) {
+			hash := HashBytes(chunk)
+			if _, ok := allHashes[hash]; !ok {
+				log.Error("%s: hash found in pack file, but not in index", hash)
+			}
+		})
+		if err != nil {
+			log.Error("%s", err)
+		}
 	})
 }
 
