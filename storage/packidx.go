@@ -18,7 +18,6 @@ import (
 	"time"
 )
 
-// TODO: two byte magic number for Idx to save space?
 var IdxMagic = [4]byte{'I', 'd', 'x', '2'}
 var BlobMagic = [4]byte{'B', 'L', '0', 'B'}
 
@@ -29,7 +28,8 @@ File format specs:
 - Index file: for each chunk, stores IdxMagic, the hash, and then the offset
   into the pack file and the length of the chunk, both encoded as varints.
 
-Note: index files can be recreated from pack files alone.
+Note: index files can be recreated from pack files alone (but no code
+exists to do this currently.)
 */
 
 // PackBLob takes (hash, chunk) pairs and the current size of the pack file
@@ -159,7 +159,7 @@ func (c *ChunkIndex) Hashes() map[Hash]struct{} {
 
 // DecodeBlob takes a blob read from a pack file (as per the specs from a
 // BlobLocation) and returns the chunk stored in that blob.
-func DecodeBlob(blob []byte) (chunk []byte, err error) {
+func DecodeBlob(blob []byte) ([]byte, error) {
 	return decodeOneBlob(bytes.NewReader(blob))
 }
 
@@ -318,14 +318,15 @@ func newPackFileBackend(fs FileStorage, maxPackSize int64) Backend {
 		idx, err := pb.fs.ReadFile(n, 0, 0)
 		log.CheckError(err)
 
-		log.Verbose("%s: got %d-length index file.", n, len(idx))
+		log.Debug("%s: got %d-length index file.", n, len(idx))
 		base := filepath.Base(strings.TrimSuffix(n, ".idx"))
 		pb.chunkIndex.AddIndexFile("packs/"+base+".pack", idx)
 
 		pb.numReads++
 		pb.bytesRead += int64(len(idx))
 	})
-	log.Verbose("Done reading indices.")
+	log.Verbose("Done reading indices: %d files, %s", pb.numReads,
+		u.FmtBytes(pb.bytesRead))
 
 	pb.launchWriters()
 
