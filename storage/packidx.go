@@ -235,15 +235,25 @@ type PackFileBackend struct {
 	metadataNames map[string]time.Time
 	chunkIndex    ChunkIndex
 
-	// Two goroutines are launched for writes: one to write to index files
-	// and one to write to pack files.  They read (filename, data) pairs
-	// from their respective chan; when a new filename is seen, they close
-	// the current file they're writing to and open up that one.
-	packName, idxName           string
-	packWriteChan, idxWriteChan chan fileWrite
-	wg                          sync.WaitGroup
-	packSize                    int64
-	maxPackSize                 int64
+	// Names of the current pack and index files.
+	packName, idxName string
+	// Contents of the index file are buffered and not written until
+	// after the corresponding pack file has safely landed in storage;
+	// this ensures that we don't inadvertently save an index for a
+	// pack file that never makes it to storage.
+	idx []byte
+	// Contents of the current pack file are immediately sent along packChan,
+	// where the writer should be landing them in storage.
+	packChan chan []byte
+	// Size of the pack file currently being written to.
+	packSize    int64
+	maxPackSize int64
+
+	// A goroutine is launched to perform asynchronous writes. It reads
+	// file write requests from writeChan and lands them in storage in the
+	// order received.
+	writeChan chan fileWrite
+	wg        sync.WaitGroup
 
 	// mu protects the statistics variables.
 	mu                    sync.Mutex
@@ -251,9 +261,12 @@ type PackFileBackend struct {
 	numSaves, numReads    int
 }
 
+// Represents a file to be written to in the storage system. The file's
+// contents should be provided as one or more slices sent along the chan
+// provided.
 type fileWrite struct {
 	path string
-	b    []byte
+	ch   chan []byte
 }
 
 // RobustWriteCloser is like a io.WriteCloser, except it treats any errors
@@ -328,7 +341,7 @@ func newPackFileBackend(fs FileStorage, maxPackSize int64) Backend {
 	log.Verbose("Done reading indices: %d files, %s", pb.numReads,
 		u.FmtBytes(pb.bytesRead))
 
-	pb.launchWriters()
+	pb.launchWriter()
 
 	return pb
 }
@@ -365,10 +378,16 @@ func (pb *PackFileBackend) Write(chunk []byte) Hash {
 	// 16 bytes of slop in the second test to account for magic numbers and
 	// the encoded chunk length.
 	if pb.packName == "" || pb.packSize+int64(len(chunk))+16 > pb.maxPackSize {
-		// Start new pack and idx files. Using the hash as a name for the
-		// file gives us a guaranteed new name: since this hash isn't in
+		// Close out the current pack file (if there is one).
+		pb.closePack()
+
+		// Start new pack and idx files. Using the hash for the filenames
+		// gives us a guaranteed new name: since this hash isn't in
 		// storage, ergo no index/pack files can have it as a name.
 		pb.packName = "packs/" + hash.String() + ".pack"
+		pb.packChan = make(chan []byte, 1024)
+		pb.writeChan <- fileWrite{pb.packName, pb.packChan}
+
 		pb.idxName = "indices/" + hash.String() + ".idx"
 		pb.packSize = 0
 	}
@@ -379,8 +398,10 @@ func (pb *PackFileBackend) Write(chunk []byte) Hash {
 	pb.chunkIndex.AddSingle(hash, pb.packName, pb.packSize, int64(len(pack)))
 	pb.packSize += int64(len(pack))
 
-	pb.idxWriteChan <- fileWrite{pb.idxName, idx}
-	pb.packWriteChan <- fileWrite{pb.packName, pack}
+	// Save the index file addition in pb.idx for now, but send the pack
+	// file data on to the writer immediately.
+	pb.idx = append(pb.idx, idx...)
+	pb.packChan <- pack
 
 	pb.mu.Lock()
 	pb.numSaves++
@@ -390,63 +411,73 @@ func (pb *PackFileBackend) Write(chunk []byte) Hash {
 	return hash
 }
 
-func (pb *PackFileBackend) launchWriters() {
-	log.Check(pb.packWriteChan == nil)
-	// Allow a fair amount of buffering so that backups can continue
-	// walking the local filesystem while waiting for writes to land. This
-	// shouldn't end up using too much memory, since each write should be
-	// in the range of tens of kB.
-	pb.packWriteChan = make(chan fileWrite, 256)
-	pb.idxWriteChan = make(chan fileWrite, 256)
+func (pb *PackFileBackend) closePack() {
+	if pb.packChan != nil {
+		close(pb.packChan)
+		pb.packChan = nil
 
-	pb.wg.Add(2)
-	go writeWorker(pb.fs, pb.packWriteChan, &pb.wg)
-	go writeWorker(pb.fs, pb.idxWriteChan, &pb.wg)
+		// Now send along the index file to be written, only after the pack
+		// file has been successfully saved to storage.
+		log.Check(len(pb.idx) > 0)
+		idxChan := make(chan []byte, 1)
+		pb.writeChan <- fileWrite{pb.idxName, idxChan}
+		idxChan <- pb.idx
+		close(idxChan)
+
+		pb.packName = ""
+		pb.idxName = ""
+		pb.packSize = 0
+		pb.idx = nil
+	}
+}
+
+func (pb *PackFileBackend) launchWriter() {
+	log.Check(pb.writeChan == nil)
+	// Don't allow too much buffering here: each 2 of these may hold an
+	// entire pack and index file's contents buffered in their internal
+	// chans.
+	pb.writeChan = make(chan fileWrite, 4)
+
+	pb.wg.Add(1)
+	go writeWorker(pb.fs, pb.writeChan, &pb.wg)
 }
 
 func writeWorker(fs FileStorage, ch chan fileWrite, wg *sync.WaitGroup) {
-	// path stores the name of the file that w is writing to.
-	var path string
-	var w RobustWriteCloser
 	for {
 		item, ok := <-ch
 		if !ok {
-			if w != nil {
-				w.Close()
-			}
+			// No more writes to come.
 			wg.Done()
 			return
 		}
 
-		if item.path != path {
-			// A new filename has arrived. We're done with the current file
-			// (and should receive no more writes for it in the future).
-			if w != nil {
+		// Got a new file to start writing to.
+		w := fs.CreateFile(item.path)
+		for {
+			// Grab byte slices from the chan for that file and write them
+			// until that chan is closed.
+			if b, ok := <-item.ch; ok {
+				w.Write(b)
+			} else {
 				w.Close()
+				// On to the next file.
+				break
 			}
-			path = item.path
-			w = fs.CreateFile(item.path)
 		}
-
-		w.Write(item.b)
 	}
 }
 
-// Close the chans and wait for the writers to train them and land all
 func (pb *PackFileBackend) SyncWrites() {
-	// of their writes to storage.
-	close(pb.packWriteChan)
-	close(pb.idxWriteChan)
+	// Wrap up the current pack file and save its index file.
+	pb.closePack()
+
+	// Close the chan and wait for the writer to exit, at which point all
+	// pending writes have landed in storage.
+	close(pb.writeChan)
 	pb.wg.Wait()
+	pb.writeChan = nil
 
-	// Get ready for more writes in the future.
-	pb.packName = ""
-	pb.idxName = ""
-	pb.packWriteChan = nil
-	pb.idxWriteChan = nil
-	pb.packSize = 0
-
-	pb.launchWriters()
+	pb.launchWriter()
 }
 
 func (pb *PackFileBackend) Read(hash Hash) (io.ReadCloser, error) {
