@@ -318,7 +318,7 @@ func backup(args []string) {
 	backend.WriteMetadata("backup-"+name, hash[:])
 	backend.SyncWrites()
 
-	log.Print("%s: successfully saved backup", name)
+	log.Print("%s: successfully saved backup: %s", name, hash)
 	backend.LogStats()
 }
 
