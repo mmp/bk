@@ -106,37 +106,40 @@ func (c *ChunkIndex) AddSingle(hash Hash, packName string, offset, length int64)
 }
 
 // Takes the entire contents of an index file and associates its index
-// entries with the given pack file name.
-func (c *ChunkIndex) AddIndexFile(packName string, idx []byte) error {
+// entries with the given pack file name. Returns the number of entries
+// added and the error (if any).
+func (c *ChunkIndex) AddIndexFile(packName string, idx []byte) (int, error) {
+	added := 0
 	for len(idx) > 0 {
 		if bytes.Compare(idx[:len(IdxMagic)], IdxMagic[:]) != 0 {
-			return ErrIndexMagicWrong
+			return added, ErrIndexMagicWrong
 		}
 		idx = idx[len(IdxMagic):]
 
 		var hash Hash
 		n := copy(hash[:], idx)
 		if n < HashSize {
-			return ErrPrematureEndOfData
+			return added, ErrPrematureEndOfData
 		}
 
 		offset, nvar := binary.Varint(idx[n:])
 		if nvar <= 0 {
-			return fmt.Errorf("varint: returned %d", nvar)
+			return added, fmt.Errorf("varint: returned %d", nvar)
 		}
 		n += nvar
 
 		length, nvar := binary.Varint(idx[n:])
 		if nvar <= 0 {
-			return fmt.Errorf("varint: returned %d", nvar)
+			return added, fmt.Errorf("varint: returned %d", nvar)
 		}
 		n += nvar
 
 		c.AddSingle(hash, packName, offset, length)
+		added++
 
 		idx = idx[n:]
 	}
-	return nil
+	return added, nil
 }
 
 func (c *ChunkIndex) Lookup(hash Hash) (BlobLocation, error) {
@@ -322,6 +325,7 @@ func newPackFileBackend(fs FileStorage, maxPackSize int64) Backend {
 
 	// TODO: do in parallel?
 	log.Verbose("Starting to read indices.")
+	added := 0
 	pb.fs.ForFiles("indices/", func(n string, created time.Time) {
 		if !strings.HasSuffix(n, ".idx") {
 			log.Warning("%s: non .idx file found in indices/ directory", n)
@@ -333,13 +337,17 @@ func newPackFileBackend(fs FileStorage, maxPackSize int64) Backend {
 
 		log.Debug("%s: got %d-length index file.", n, len(idx))
 		base := filepath.Base(strings.TrimSuffix(n, ".idx"))
-		pb.chunkIndex.AddIndexFile("packs/"+base+".pack", idx)
+		nadd, err := pb.chunkIndex.AddIndexFile("packs/"+base+".pack", idx)
+		if err != nil {
+			log.Fatal("%s: %s", n, err)
+		}
+		added += nadd
 
 		pb.numReads++
 		pb.bytesRead += int64(len(idx))
 	})
-	log.Verbose("Done reading indices: %d files, %s", pb.numReads,
-		u.FmtBytes(pb.bytesRead))
+	log.Verbose("Done reading indices: %d files, %s -> %d entries", pb.numReads,
+		u.FmtBytes(pb.bytesRead), added)
 
 	pb.launchWriter()
 
