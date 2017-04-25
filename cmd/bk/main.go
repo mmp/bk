@@ -197,6 +197,7 @@ func main() {
 		switch os.Args[idx] {
 		case "--debug":
 			debug = true
+			verbose = true
 			idx++
 		case "--verbose":
 			verbose = true
