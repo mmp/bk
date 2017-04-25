@@ -5,12 +5,14 @@
 package main
 
 import (
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
 	"github.com/mmp/bk/storage"
 	u "github.com/mmp/bk/util"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/signal"
 	"runtime/pprof"
@@ -23,7 +25,7 @@ var log *u.Logger
 
 func usage() {
 	fmt.Printf(`usage: bk [bk flags...] <command> [command args...]
-where <command> is: backup, fsck, help, init, list, mount, restore, restorebits, savebits.
+where <command> is: backup, cat, fsck, help, init, list, mount, restore, restorebits, savebits.
 Run "bk help" for more detailed help.
 `)
 	os.Exit(1)
@@ -58,6 +60,9 @@ Commands and their options are:
       specify a base backup for incremental backups. Backup names
       must be unique.
            
+  cat <hash ...>
+      Prints the contents of the given hash(es) to standard output.
+
   fsck
       Check integrity of the bk repository.
 
@@ -252,6 +257,8 @@ func main() {
 		help()
 	case "backup":
 		backup(os.Args[idx:])
+	case "cat":
+		cat(os.Args[idx:])
 	case "fsck":
 		fsck(os.Args[idx:])
 	case "init":
@@ -320,6 +327,41 @@ func backup(args []string) {
 	backend.SyncWrites()
 
 	log.Print("%s: successfully saved backup: %s", name, hash)
+	backend.LogStats()
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+func cat(args []string) {
+	if len(args) == 0 {
+		Error("usage: bk cat <hash ...>\n")
+	}
+
+	backend := GetStorageBackend()
+	for _, arg := range args {
+		h, err := hex.DecodeString(arg)
+		if err != nil {
+			Error("%s: %s\n", arg, err)
+		}
+		if len(h) != storage.HashSize {
+			Error("%s: given %d bytes, expected %d\n", arg, len(h),
+				storage.HashSize)
+		}
+		var hash storage.Hash
+		copy(hash[:], h)
+
+		r, err := backend.Read(hash)
+		if err != nil {
+			Error("%s: %s\n", arg, err)
+		}
+		b, err := ioutil.ReadAll(r)
+		if err != nil {
+			Error("%s: %s\n", arg, err)
+		}
+		fmt.Print(string(b))
+		r.Close()
+	}
+
 	backend.LogStats()
 }
 
