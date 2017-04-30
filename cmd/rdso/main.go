@@ -32,12 +32,12 @@ func main() {
 	open := func(fn string) (*os.File, *os.File) {
 		r, err := os.Open(fn)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, fn+": "+err.Error())
+			fmt.Fprint(os.Stderr, fn, ": ", err, "\n")
 			os.Exit(1)
 		}
 		rsr, err := os.Open(fn + ".rs")
 		if err != nil {
-			fmt.Fprintln(os.Stderr, fn+".rs: "+err.Error())
+			fmt.Fprint(os.Stderr, fn, ".rs: ", err, "\n")
 			os.Exit(1)
 		}
 		return r, rsr
@@ -50,8 +50,10 @@ func main() {
 		for _, fn := range os.Args[2:] {
 			r, rsr := open(fn)
 			if err := rdso.Check(r, rsr, log); err != nil {
-				fmt.Fprintln(os.Stderr, fn+": "+err.Error())
+				fmt.Fprint(os.Stderr, fn, ": ", err, "\n")
 				os.Exit(1)
+			} else {
+				fmt.Print(fn, ": successfully verified integrity\n")
 			}
 			r.Close()
 			rsr.Close()
@@ -61,23 +63,23 @@ func main() {
 			r, rsr := open(fn)
 			info, err := r.Stat()
 			if err != nil {
-				fmt.Fprintln(os.Stderr, fn+": "+err.Error())
+				fmt.Fprint(os.Stderr, fn, ": ", err, "\n")
 				os.Exit(1)
 			}
 
 			w, err := os.Create(fn + ".restored")
 			if err != nil {
-				fmt.Fprintln(os.Stderr, fn+".restored: "+err.Error())
+				fmt.Fprint(os.Stderr, fn, ".restored: ", err, "\n")
 				os.Exit(1)
 			}
 			rsw, err := os.Create(fn + ".rs.restored")
 			if err != nil {
-				fmt.Fprintln(os.Stderr, fn+".rs.restored: "+err.Error())
+				fmt.Fprint(os.Stderr, fn, ".rs.restored: ", err, "\n")
 				os.Exit(1)
 			}
 
 			if err := rdso.Restore(r, rsr, info.Size(), w, rsw, log); err != nil {
-				fmt.Fprintln(os.Stderr, fn+": "+err.Error())
+				fmt.Fprint(os.Stderr, fn, ": ", err, "\n")
 				os.Exit(1)
 			}
 
@@ -85,11 +87,11 @@ func main() {
 			rsr.Close()
 
 			if err = w.Close(); err != nil {
-				fmt.Fprintln(os.Stderr, fn+".restored: "+err.Error())
+				fmt.Fprint(os.Stderr, fn, ".restored: ", err, "\n")
 				os.Exit(1)
 			}
 			if err = rsw.Close(); err != nil {
-				fmt.Fprintln(os.Stderr, fn+".rs.restored: "+err.Error())
+				fmt.Fprint(os.Stderr, fn, ".rs.restored: ", err, "\n")
 				os.Exit(1)
 			}
 		}
@@ -110,30 +112,30 @@ func encode(args []string) {
 
 	for _, fn := range flag.Args() {
 		if strings.HasSuffix(fn, ".rs") {
-			fmt.Println(fn, ": skipping Reed-Solomon encoding of .rs file")
+			fmt.Print(fn, ": skipping Reed-Solomon encoding of .rs file\n")
 			continue
 		}
 		r, err := os.Open(fn)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, fn+": "+err.Error())
+			fmt.Fprint(os.Stderr, fn, ": ", err, "\n")
 			os.Exit(1)
 		}
 		info, err := r.Stat()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, fn+": "+err.Error())
+			fmt.Fprint(os.Stderr, fn, ": ", err, "\n")
 			os.Exit(1)
 		}
 
 		w, err := os.Create(fn + ".rs")
 		if err != nil {
-			fmt.Fprintln(os.Stderr, fn+".rs: "+err.Error())
+			fmt.Fprint(os.Stderr, fn, ".rs: ", err, "\n")
 			os.Exit(1)
 		}
 
 		err = rdso.Encode(r, info.Size(), w, *nShards, *nParity, *hashRate)
 		if err != nil {
-			fmt.Println(fn + ": " + err.Error())
+			fmt.Print(fn, ": ", err, "\n")
 		}
-		fmt.Println(fn, ".rs: created Reed-Solomon encoding file")
+		fmt.Print(fn, ".rs: created Reed-Solomon encoding file\n")
 	}
 }
