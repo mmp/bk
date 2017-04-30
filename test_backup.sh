@@ -13,6 +13,7 @@ fi
 SRC_DIR=$argv[1]
 RESTORE_DIR=$TMPDIR/bk_restore
 BK=(bk --verbose)
+RDSO=rdso
 
 export BK_DIR=$TMPDIR/bk
 
@@ -28,6 +29,9 @@ $BK backup --base test test $SRC_DIR
 $BK list  
 $BK fsck  
 
+$RDSO check $BK_DIR/indices/*idx
+$RDSO check $BK_DIR/packs/*pack
+    
 for b in test `bk list | grep test@ | awk '{print $1}'`; do
     rm -rf $RESTORE_DIR
     echo Restoring backup $b
@@ -51,6 +55,9 @@ sleep 1
 $BK backup --base test test $SRC_DIR
 $BK list  
 $BK fsck  
+
+$RDSO check $BK_DIR/indices/*idx
+$RDSO check $BK_DIR/packs/*pack
 
 for b in test `bk list | grep test@ | awk '{print $1}'`; do
     rm -rf $RESTORE_DIR

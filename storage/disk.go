@@ -79,7 +79,18 @@ func (db *disk) Fsck() bool {
 	filepath.Walk(db.dir,
 		func(path string, info os.FileInfo, err error) error {
 			if !strings.HasSuffix(path, ".rs") {
-				rdso.CheckFile(path, path+".rs", log)
+				r, err := os.Open(path)
+				if err != nil {
+					return err
+				}
+				defer r.Close()
+				rsr, err := os.Open(path + ".rs")
+				if err != nil {
+					return err
+				}
+				defer rsr.Close()
+
+				return rdso.Check(r, rsr, log)
 			}
 			return nil
 		})
@@ -147,16 +158,30 @@ func (w *robustWriter) Close() {
 	log.CheckError(w.file.Close())
 
 	// Next, compute the Reed-Solomon encoding for the file's contents.
+	tmpPath := w.path + ".tmp"
+	r, err := os.Open(tmpPath)
+	log.CheckError(err)
+	defer r.Close()
+	info, err := r.Stat()
+	log.CheckError(err)
+
+	// Write the encoding to a temporary file to be sure we don't have an
+	// incomplete one.
+	rsw, err := os.Create(w.path + ".rs.tmp")
+	log.CheckError(err)
+
 	const nDataShards = 17
 	const nParityShards = 3
 	const hashRate = 1024 * 1024
-	tmpPath := w.path + ".tmp"
-	rdso.EncodeFile(tmpPath, w.path+".rs", nDataShards, nParityShards,
-		hashRate)
+	err = rdso.Encode(r, info.Size(), rsw, nDataShards, nParityShards, hashRate)
+	log.CheckError(err)
+	log.CheckError(rsw.Sync())
+	log.CheckError(rsw.Close())
+	log.CheckError(os.Rename(w.path+".rs.tmp", w.path+".rs"))
 
-	// Finally, rename the temporary file (which we now know to be valid
-	// and complete) to the final filename that we wanted originally. Only
-	// once the rename has succeeded can we be sure that everything is
-	// safely on disk.
+	// Finally, rename the temporary file for the data (which we now know
+	// to be valid and complete) to the final filename that we wanted
+	// originally. Only once the rename has succeeded can we be sure that
+	// everything is safely on disk.
 	log.CheckError(os.Rename(tmpPath, w.path))
 }

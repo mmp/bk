@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"github.com/mmp/bk/rdso"
 	u "github.com/mmp/bk/util"
-	"io"
 	"os"
 	"strings"
 )
@@ -30,24 +29,67 @@ func main() {
 
 	log := u.NewLogger(true /*verbose*/, false /*debug*/)
 
+	open := func(fn string) (*os.File, *os.File) {
+		r, err := os.Open(fn)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, fn+": "+err.Error())
+			os.Exit(1)
+		}
+		rsr, err := os.Open(fn + ".rs")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, fn+".rs: "+err.Error())
+			os.Exit(1)
+		}
+		return r, rsr
+	}
+
 	switch os.Args[1] {
 	case "encode":
 		encode(os.Args[2:])
 	case "check":
-		w := &countingWriter{os.Stderr, 0}
 		for _, fn := range os.Args[2:] {
-			err := rdso.CheckFile(fn, fn+".rs", log)
+			r, rsr := open(fn)
+			if err := rdso.Check(r, rsr, log); err != nil {
+				fmt.Fprintln(os.Stderr, fn+": "+err.Error())
+				os.Exit(1)
+			}
+			r.Close()
+			rsr.Close()
+		}
+	case "restore":
+		for _, fn := range os.Args[2:] {
+			r, rsr := open(fn)
+			info, err := r.Stat()
 			if err != nil {
 				fmt.Fprintln(os.Stderr, fn+": "+err.Error())
 				os.Exit(1)
 			}
-		}
-		os.Exit(w.Count)
-	case "restore":
-		for _, fn := range os.Args[2:] {
-			err := rdso.RestoreFile(fn, fn+".rs", log)
+
+			w, err := os.Create(fn + ".restored")
 			if err != nil {
+				fmt.Fprintln(os.Stderr, fn+".restored: "+err.Error())
+				os.Exit(1)
+			}
+			rsw, err := os.Create(fn + ".rs.restored")
+			if err != nil {
+				fmt.Fprintln(os.Stderr, fn+".rs.restored: "+err.Error())
+				os.Exit(1)
+			}
+
+			if err := rdso.Restore(r, rsr, info.Size(), w, rsw, log); err != nil {
 				fmt.Fprintln(os.Stderr, fn+": "+err.Error())
+				os.Exit(1)
+			}
+
+			r.Close()
+			rsr.Close()
+
+			if err = w.Close(); err != nil {
+				fmt.Fprintln(os.Stderr, fn+".restored: "+err.Error())
+				os.Exit(1)
+			}
+			if err = rsw.Close(); err != nil {
+				fmt.Fprintln(os.Stderr, fn+".rs.restored: "+err.Error())
 				os.Exit(1)
 			}
 		}
@@ -56,21 +98,11 @@ func main() {
 	}
 }
 
-type countingWriter struct {
-	io.Writer
-	Count int
-}
-
-func (w *countingWriter) Write(p []byte) (int, error) {
-	w.Count++
-	return w.Writer.Write(p)
-}
-
 func encode(args []string) {
 	flag := flag.NewFlagSet("encode", flag.ContinueOnError)
 	nShards := flag.Int("nshards", 17, "number of data shards")
 	nParity := flag.Int("nparity", 3, "number of parity shards")
-	hashRate := flag.Int64("hashrate", 1024*1024, "chunk size for file hashes")
+	hashRate := flag.Int("hashrate", 1024*1024, "chunk size for file hashes")
 	err := flag.Parse(args)
 	if err != nil {
 		os.Exit(1)
@@ -81,11 +113,27 @@ func encode(args []string) {
 			fmt.Println(fn, ": skipping Reed-Solomon encoding of .rs file")
 			continue
 		}
-		rsfn := fn + ".rs"
-		err := rdso.EncodeFile(fn, rsfn, *nShards, *nParity, *hashRate)
+		r, err := os.Open(fn)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, fn+": "+err.Error())
+			os.Exit(1)
+		}
+		info, err := r.Stat()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, fn+": "+err.Error())
+			os.Exit(1)
+		}
+
+		w, err := os.Create(fn + ".rs")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, fn+".rs: "+err.Error())
+			os.Exit(1)
+		}
+
+		err = rdso.Encode(r, info.Size(), w, *nShards, *nParity, *hashRate)
 		if err != nil {
 			fmt.Println(fn + ": " + err.Error())
 		}
-		fmt.Printf("%s: created Reed-Solomon encoding file\n", rsfn)
+		fmt.Println(fn, ".rs: created Reed-Solomon encoding file")
 	}
 }

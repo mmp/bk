@@ -10,259 +10,271 @@ package rdso
 
 import (
 	"encoding/gob"
+	"errors"
 	"github.com/klauspost/reedsolomon"
 	u "github.com/mmp/bk/util"
 	"golang.org/x/crypto/sha3"
 	"io"
-	"os"
 )
 
-// HashSize is the number of bytes in the hash values returned to
+var ErrFileCorrupt = errors.New("File corrupted")
+
+var ErrSizeIncorrect = errors.New("Provided size didn't match count of bytes read")
+
+// hashSize is the number of bytes in the hash values returned to
 // represent blobs of data.
-const HashSize = 64
+const hashSize = 32
 
 // Hash encodes a fixed-size secure hash of a collection of bytes.
-type Hash [HashSize]byte
+type hash [hashSize]byte
 
-// HashBytes computes the SHAKE256 hash of the given byte slice.
-func HashBytes(b []byte) Hash {
-	var h Hash
+// hashBytes computes the SHAKE256 hash of the given byte slice.
+func hashBytes(b []byte) hash {
+	var h hash
 	sha3.ShakeSum256(h[:], b)
 	return h
 }
 
-type ReedSolomonFile struct {
+// The .rs file format starts with an rsFileHeader and then has a series of
+// rsFileSegments, all gob encoded.
+type rsFileHeader struct {
 	// Size of the original file
 	FileSize                   int64
 	NDataShards, NParityShards int
-	HashRate                   int64
-	Hashes                     [][]Hash // First the data hashes, then the parity hashes.
-	ParityShards               [][]byte
+	HashRate                   int
 }
 
-func EncodeFile(fn, rsfn string, nDataShards int, nParityShards int,
-	hashRate int64) error {
-	rs := ReedSolomonFile{
+// Each segment of bytes in the input file (of length NDataShards *
+// HashRate) is represented by an rsFileSegment.
+type rsFileSegment struct {
+	Hashes       []hash // First data, then parity hashes
+	ParityShards [][]byte
+}
+
+// Encode Reed-Solomon encodes the bytestream from the io.Reader r and
+// write the result to the provided io.Writer.  The number of bytes that
+// will be provided by r must be passed in the size argument.
+func Encode(r io.ReadSeeker, size int64, w io.Writer, nDataShards, nParityShards, hashRate int) error {
+	// Create the gob encoder and write the header.
+	genc := gob.NewEncoder(w)
+	if err := genc.Encode(rsFileHeader{
+		FileSize:      size,
 		NDataShards:   nDataShards,
 		NParityShards: nParityShards,
-		HashRate:      hashRate,
+		HashRate:      hashRate}); err != nil {
+		return err
 	}
 
-	// Read the file from disk and shard it.
-	var err error
-	var dataShards [][]byte
-	dataShards, rs.FileSize, err = readAndShardFile(fn, nDataShards)
+	rsenc, err := reedsolomon.New(nDataShards, nParityShards)
 	if err != nil {
 		return err
 	}
 
-	// Allocate storage for the parity shards.
-	for i := 0; i < nParityShards; i++ {
-		rs.ParityShards = append(rs.ParityShards,
-			make([]byte, len(dataShards[0])))
-	}
-
-	// Reed-Solomon encode the sharded file.
-	enc, err := reedsolomon.New(nDataShards, nParityShards)
-	if err != nil {
-		return err
-	}
-	allShards := append(dataShards, rs.ParityShards...)
-	err = enc.Encode(allShards)
-	if err != nil {
-		return err
-	}
-
-	// Sanity check the results.
-	ok, err := enc.Verify(allShards)
-	if !ok || err != nil {
-		panic("verify failed")
-	}
-
-	// Compute the hashes.
-	for _, s := range dataShards {
-		rs.Hashes = append(rs.Hashes, hash(shard(s, hashRate)))
-	}
-	for _, s := range rs.ParityShards {
-		rs.Hashes = append(rs.Hashes, hash(shard(s, hashRate)))
-	}
-
-	// Write the .rs file
-	fout, err := os.Create(rsfn)
-	if err != nil {
-		return err
-	}
-	genc := gob.NewEncoder(fout)
-	err = genc.Encode(rs)
-	if err != nil {
-		return err
-	}
-	return fout.Close()
-}
-
-// Shards into first nshards
-func readAndShardFile(fn string, nshards int) (shards [][]byte,
-	size int64, err error) {
-	f, err := os.Open(fn)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return
-	}
-	size = fi.Size()
-
-	shardSize := (fi.Size() + int64(nshards) - 1) / int64(nshards)
-	// Allocate extra space so all shards can be the same size.
-	buf := make([]byte, int64(nshards)*shardSize)
-
-	// Read the file contents into the buffer.
-	_, err = io.ReadFull(f, buf[:fi.Size()])
-	if err != nil {
-		return
-	}
-
-	// Zero pad the end of the last shard
-	buf = buf[:cap(buf)]
-
-	shards = shard(buf, shardSize)
-
-	return
-}
-
-func shard(b []byte, size int64) (s [][]byte) {
+	sumSize := int64(0)
+	buf := make([]byte, nDataShards*hashRate)
 	for {
-		if int64(len(b)) > size {
-			s = append(s, b[:size])
-			b = b[size:]
-		} else {
-			s = append(s, b)
-			return
+		n, err := io.ReadFull(r, buf)
+		sumSize += int64(n)
+
+		if err == io.EOF {
+			break
+		} else if err != nil && err != io.ErrUnexpectedEOF {
+			// ErrUnexpectedEOF is fine; it's just a partial segment at the
+			// end of the file.
+			return err
+		}
+
+		// Split the segment into file shards and allocate empty parity
+		// shards.
+		shards, err := rsenc.Split(buf[:n])
+		if err != nil {
+			return err
+		}
+
+		// Reed-Solomon encode the current segment.
+		if err = rsenc.Encode(shards); err != nil {
+			return err
+		}
+
+		// Sanity check the results.
+		if ok, err := rsenc.Verify(shards); !ok || err != nil {
+			panic("verify failed after encoding")
+		}
+
+		// Compute data and parity hashes and initialize the rsFileSegment.
+		var seg rsFileSegment
+		for _, s := range shards {
+			seg.Hashes = append(seg.Hashes, hashBytes(s))
+		}
+		seg.ParityShards = shards[nDataShards:]
+
+		// Add the segment to the .rs file
+		if err = genc.Encode(seg); err != nil {
+			return err
 		}
 	}
-}
 
-func hash(b [][]byte) (hashes []Hash) {
-	for _, s := range b {
-		hashes = append(hashes, HashBytes(s))
+	if sumSize != size {
+		return ErrSizeIncorrect
 	}
-	return
+	return nil
 }
 
-func CheckFile(fn, rsfn string, log *u.Logger) error {
-	return checkOrRestore(fn, rsfn, log, false)
-}
+// Utility routine that calls the given callback function for each segment
+// in the data from r, providing the shards (file and parity) and hash
+// values.
+func forEachSegment(r, rsr io.Reader, log *u.Logger,
+	callback func(h rsFileHeader, hashes []hash, shards [][]byte) error) error {
+	var h rsFileHeader
+	d := gob.NewDecoder(rsr)
+	if err := d.Decode(&h); err != nil {
+		return err
+	}
 
-func RestoreFile(fn, rsfn string, log *u.Logger) error {
-	return checkOrRestore(fn, rsfn, log, true)
-
-}
-
-func checkOrRestore(fn, rsfn string, log *u.Logger, restore bool) error {
-	// Read the .rs file for the data file.
-	rs, err := readRsFile(rsfn)
+	rsenc, err := reedsolomon.New(h.NDataShards, h.NParityShards)
 	if err != nil {
 		return err
 	}
 
-	// Read and shard the data file.
-	dataShards, _, err := readAndShardFile(fn, rs.NDataShards)
-	if err != nil {
-		return err
+	sumSize := int64(0)
+	buf := make([]byte, h.NDataShards*h.HashRate)
+	for {
+		n, err := io.ReadFull(r, buf)
+		sumSize += int64(n)
+
+		if err == io.EOF {
+			// Make sure we're at EOF for the .rs file as well
+			var seg rsFileSegment
+			if err = d.Decode(&seg); err != io.EOF {
+				return errors.New("Extra data found at end of .rs file")
+			}
+			break
+		} else if err != nil && err != io.ErrUnexpectedEOF {
+			return err
+		}
+
+		shards, err := rsenc.Split(buf[:n])
+		if err != nil {
+			return err
+		}
+
+		var seg rsFileSegment
+		if err = d.Decode(&seg); err != nil {
+			return err
+		}
+
+		// Put the data and parity together in shards.
+		copy(shards[h.NDataShards:], seg.ParityShards)
+
+		if err = callback(h, seg.Hashes, shards); err != nil {
+			return err
+		}
 	}
 
-	// First shard as for R-S, then shard for the hash chunk size
-	var allShards [][][]byte
-	for _, s := range dataShards {
-		allShards = append(allShards, shard(s, rs.HashRate))
+	if sumSize != h.FileSize {
+		return ErrSizeIncorrect
 	}
-	for _, s := range rs.ParityShards {
-		allShards = append(allShards, shard(s, rs.HashRate))
-	}
+	return nil
+}
 
-	// Loop over the hash chunks
-	errors := 0
-	nHashChunks := len(allShards[0]) // == len(allShards[*])
-	for hc := 0; hc < nHashChunks; hc++ {
-		for s := 0; s < len(allShards); s++ {
-			if HashBytes(allShards[s][hc]) != rs.Hashes[s][hc] {
-				if log != nil {
-					if s < len(dataShards) {
-						if restore {
-							log.Warning("%s: data shard %d hash %d mismatch\n",
-								fn, s, hc)
-						} else {
-							log.Error("%s: data shard %d hash %d mismatch\n",
-								fn, s, hc)
-						}
+// Check the integrity of the bytestream from r using an encoding
+// bytestream in rsr that was been generated by Encode().
+func Check(r, rsr io.Reader, log *u.Logger) error {
+	nErrors := 0
+	seg := 0
+	err := forEachSegment(r, rsr, log,
+		func(h rsFileHeader, hashes []hash, shards [][]byte) error {
+			for i, s := range shards {
+				if hashBytes(s) != hashes[i] {
+					nErrors++
+					if i < h.NDataShards {
+						log.Warning("data segment %d shard %d hash mismatch", seg, i)
 					} else {
-						if restore {
-							log.Warning("%s: parity shard %d hash %d mismatch\n",
-								fn, s-len(dataShards), hc)
-						} else {
-							log.Error("%s: parity shard %d hash %d mismatch\n",
-								fn, s-len(dataShards), hc)
-						}
+						log.Warning("parity segment %d shard %d hash mismatch", seg,
+							i-h.NDataShards)
 					}
 				}
-				errors++
-				// nil it out (in case we're going to try and recover)
-				allShards[s][hc] = nil
 			}
-		}
-	}
+			seg++
+			return nil
+		})
 
-	// See if we need to recover (and are supposed to.)
-	if !restore || errors == 0 {
-		return nil
-	}
-
-	// Try to recover the file.
-	enc, err := reedsolomon.New(rs.NDataShards, rs.NParityShards)
 	if err != nil {
 		return err
 	}
-
-	for hc := 0; hc < nHashChunks; hc++ {
-		// Recover this chunk, if needed.
-		missing := 0
-		var recon [][]byte
-		for _, shard := range allShards {
-			recon = append(recon, shard[hc])
-			if shard[hc] == nil {
-				missing++
-			}
-		}
-		if missing > 0 {
-			err = enc.Reconstruct(recon)
-			if err != nil {
-				return err
-			}
-		}
-
-		for s := 0; s < len(dataShards); s++ {
-			copy(dataShards[s][int64(hc)*rs.HashRate:], recon[s])
-		}
+	if nErrors > 0 {
+		return ErrFileCorrupt
 	}
-
-	// Write out new file
-	f, err := os.Create(fn + ".recovered")
-	if err != nil {
-		return nil
-	}
-	w := &limitedWriter{f, rs.FileSize}
-	for _, shard := range dataShards {
-		_, err = w.Write(shard)
-		if err != nil {
-			return nil
-		}
-	}
-
-	return f.Close()
+	return nil
 }
 
+// Given a bytestream r and its encoding in rsr, attempt to repair any
+// corrupt bytes, returning a repaired bytestream in w and a repaired
+// encoding bytestream in rsw.  Returns nil iff recovery was successful.
+func Restore(r, rsr io.Reader, size int64, w, rsw io.Writer, log *u.Logger) error {
+	genc := gob.NewEncoder(rsw)
+	w = &limitedWriter{w, size}
+
+	first := true
+	err := forEachSegment(r, rsr, log,
+		func(h rsFileHeader, hashes []hash, shards [][]byte) error {
+			if first {
+				// First segment; now have the header, so can write the
+				// header to the recovered RS file.
+				if err := genc.Encode(h); err != nil {
+					return err
+				}
+				first = false
+			}
+
+			reconstruct := false
+			for i, s := range shards {
+				if hashBytes(s) != hashes[i] {
+					shards[i] = nil
+					reconstruct = true
+				}
+			}
+
+			if reconstruct {
+				rsenc, err := reedsolomon.New(h.NDataShards, h.NParityShards)
+				if err != nil {
+					return err
+				}
+
+				if err := rsenc.Reconstruct(shards); err != nil {
+					return err
+				}
+				if ok, err := rsenc.Verify(shards); !ok || err != nil {
+					panic("verify failed")
+				}
+
+				// Double check that the reconstructed hashes match.
+				for i, s := range shards {
+					if hashBytes(s) != hashes[i] {
+						log.Warning("Reconstructed file contents still don't match hash. Though, this could mean the hash was corrupted...")
+					}
+				}
+			}
+
+			// Write to the recovered data file..
+			for _, s := range shards[:h.NDataShards] {
+				if _, err := w.Write(s); err != nil {
+					return err
+				}
+			}
+
+			// ..and to the recovered rs file.
+			seg := rsFileSegment{hashes, shards[h.NDataShards:]}
+			if err := genc.Encode(seg); err != nil {
+				return err
+			}
+			return nil
+		})
+
+	return err
+}
+
+// Write no more than N bytes to W.
 type limitedWriter struct {
 	W io.Writer
 	N int64
@@ -275,19 +287,4 @@ func (w *limitedWriter) Write(data []byte) (int, error) {
 	n, err := w.W.Write(data)
 	w.N -= int64(n)
 	return n, err
-}
-
-func readRsFile(fn string) (ReedSolomonFile, error) {
-	var rs ReedSolomonFile
-	f, err := os.Open(fn)
-	if err != nil {
-		return rs, err
-	}
-	d := gob.NewDecoder(f)
-	err = d.Decode(&rs)
-	if err != nil {
-		return rs, err
-	}
-	f.Close()
-	return rs, nil
 }
