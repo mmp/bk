@@ -31,7 +31,7 @@ func TestPacker(t *testing.T) {
 
 	var index ChunkIndex
 	const packName = "foobar.pack"
-	err := index.AddIndexFile(packName, idx)
+	_, err := index.AddIndexFile(packName, idx)
 	if err != nil {
 		t.Fatalf("Add: %+v", err)
 	}
