@@ -14,10 +14,7 @@ import (
 	"time"
 )
 
-// The Reed-Solomon encoding implementation ends up reading the whole file
-// into memory (and more), so limit the size of packfiles to 2GB for now,
-// which makes sure things aren't too bad.
-const maxDiskPackFileSize = 1 << 31
+const maxDiskPackFileSize = 1 << 32
 
 // disk implements the FileStorage interface to store data in a directory
 // in the local file system.
