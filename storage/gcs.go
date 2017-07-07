@@ -22,7 +22,7 @@ import (
 // resumable uploads (not supported in the golang GCS library), and we also
 // buffer a copy of the file contents as they're written in memory so that
 // we can retry from scratch for failures.
-const maxGCSPackSize = 128 * 1024 * 1024
+const maxGCSPackSize = 512 * 1024 * 1024
 
 // Implements the FileStorage interface to store files in Google Cloud
 // Storage.
