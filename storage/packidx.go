@@ -333,6 +333,9 @@ func newPackFileBackend(fs FileStorage, maxPackSize int64) Backend {
 		}
 
 		idx, err := pb.fs.ReadFile(n, 0, 0)
+		if err != nil {
+			log.Error("%s: %+v", n, err)
+		}
 		log.CheckError(err)
 
 		log.Debug("%s: got %d-length index file.", n, len(idx))
