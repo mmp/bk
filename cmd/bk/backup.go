@@ -151,41 +151,52 @@ func (e *DirEntry) GetContentsReader(sem chan bool, backend storage.Backend) (io
 
 ///////////////////////////////////////////////////////////////////////////
 
-func BackupDir(dirpath string, backend storage.Backend, splitBits uint) storage.Hash {
+func BackupDir(dirpath string, backend storage.Backend, splitBits uint) (storage.Hash, error) {
 	r, err := NewRoot(dirpath)
 	if err != nil {
-		log.Fatal("%s", err)
+		return storage.Hash{}, err
 	}
-	r.Dir.Hash = backupDirContents(dirpath, nil, backend, splitBits)
-	return backend.Write(r.Bytes())
+	r.Dir.Hash, err = backupDirContents(dirpath, nil, backend, splitBits)
+	if err != nil {
+		return storage.Hash{}, err
+	}
+	return backend.Write(r.Bytes()), nil
 }
 
 func BackupDirIncremental(dirpath string, baseHash storage.Hash,
-	backend storage.Backend, splitBits uint) storage.Hash {
+	backend storage.Backend, splitBits uint) (storage.Hash, error) {
 	r, err := NewRoot(dirpath)
 	if err != nil {
-		log.Fatal("%s: %s", dirpath, err)
+		return storage.Hash{}, err
 	}
 
 	// Read the entires for the root directory in the backup being used as
 	// the base.
 	baseRoot, err := ReadRoot(baseHash, backend)
 	if err != nil {
-		log.Fatal("%s: %s", dirpath, err)
+		return storage.Hash{}, err
 	}
 	baseRootEntries := readDirEntries(baseRoot.Dir.Hash, backend)
 
-	r.Dir.Hash = backupDirContents(dirpath, baseRootEntries, backend, splitBits)
-	return backend.Write(r.Bytes())
+	r.Dir.Hash, err = backupDirContents(dirpath, baseRootEntries, backend, splitBits)
+	if err != nil {
+		return storage.Hash{}, err
+	}
+	return backend.Write(r.Bytes()), nil
 }
 
 // Back up the contents of the given directory (and subdirectories)
 // returning a MerkleHash that identifies the serialized []DirEntry for the
-// contents.
+// contents. If we're unable to backup various individual files or
+// directories along the way, an error is logged but a nil error is
+// returned from this function; we don't want to report failure if, for
+// example, we don't have permissions to read a file.
 func backupDirContents(dirpath string, baseEntries []DirEntry,
-	backend storage.Backend, splitBits uint) storage.MerkleHash {
+	backend storage.Backend, splitBits uint) (storage.MerkleHash, error) {
 	fileinfo, err := ioutil.ReadDir(dirpath)
-	log.CheckError(err)
+	if err != nil {
+		return storage.MerkleHash{}, err
+	}
 
 	// For incremental backups, there is an O(n) search that is performed n
 	// times in the following, where n is the number of directory entries.
@@ -212,19 +223,22 @@ func backupDirContents(dirpath string, baseEntries []DirEntry,
 		log.Debug("%s: backing up", path)
 		e, err := NewDirEntry(f)
 		if err != nil {
-			log.Warning("%s: %s", path, err)
+			log.Error("%s: %s", path, err)
 			continue
 		}
 
 		switch {
 		case e.IsDir():
+			var childEntries []DirEntry
 			if baseEntry != nil {
 				// Get the subdirectory's contents from the base backup
 				// before continuing recursively.
-				childEntries := readDirEntries(baseEntry.Hash, backend)
-				e.Hash = backupDirContents(path, childEntries, backend, splitBits)
-			} else {
-				e.Hash = backupDirContents(path, nil, backend, splitBits)
+				childEntries = readDirEntries(baseEntry.Hash, backend)
+			}
+			e.Hash, err = backupDirContents(path, childEntries, backend, splitBits)
+			if err != nil {
+				log.Error("%s: %s", path, err)
+				continue
 			}
 		case e.IsFile():
 			if baseEntry != nil && baseEntry.Size == f.Size() &&
@@ -234,41 +248,53 @@ func backupDirContents(dirpath string, baseEntries []DirEntry,
 				e.Hash = baseEntry.Hash
 				e.Contents = baseEntry.Contents
 			} else {
-				// The file may have changed (or definitely did if the size
-				// changed!), so go ahead and back up the contents. If they
-				// are in fact unchanged, we only pay for some I/O here; the
-				// dedupe stuff in the storage backend should recognize that
-				// we already have the data stored.
+				// The file may have changed (different mod time) or
+				// definitely did if the size changed, so go ahead and
+				// split and hash the contents. If the contents are in fact
+				// unchanged, we only pay for some I/O here; the dedupe
+				// stuff in the storage backend will recognize that we
+				// already have the data stored.
 				switch {
 				case f.Size() < 8192:
-					// For small files, don't bother splitting them; this
-					// gives the splitter more to work with when it gets
-					// the serialized array of DirEntries for this
-					// directory.
+					// Don't bother splitting small files; this gives the
+					// splitter more to work with when it gets the
+					// serialized array of DirEntries for this directory.
 					c, err := ioutil.ReadFile(path)
-					log.CheckError(err)
+					if err != nil {
+						log.Error("%s: %s", path, err)
+						continue
+					}
 					e.Contents = c
-				case isChunkReuseUnlikely(f):
-					// For large media files and files that are already
-					// compressed, split into big chunks (on average 256k).
-					// For these don't expect any reuse across changed
-					// versions of the files over multiple backups, so we
-					// might as well minimize the number of hashes
-					// needed.
-					//
-					// Note that we don't want to not split at all and use
-					// a single huge chunk for the file, as that would end
-					// up causing the whole file to be read into memory
-					// both now and at restore time, which is nice to
-					// avoid.
-					e.Hash = backupFileContents(path, backend, 18)
 				default:
-					e.Hash = backupFileContents(path, backend, splitBits)
+					sb := splitBits
+					if isChunkReuseUnlikely(f) {
+						// For large media files and files that are already
+						// compressed, split into big chunks (on average
+						// 256k).  For these, we don't expect any reuse
+						// across changed versions of the files over
+						// multiple backups, so we might as well limit the
+						// number of hashes needed.
+						//
+						// Note that we don't want to not split at all and
+						// use a single huge chunk for the file, as that
+						// would end up causing the whole file to be read
+						// into memory both now and at restore time, which
+						// is nice to avoid.
+						sb = 18
+					}
+					e.Hash, err = backupFileContents(path, backend, sb)
+					if err != nil {
+						log.Error("%s: %s", path, err)
+						continue
+					}
 				}
 			}
 		case e.IsSymLink():
 			target, err := os.Readlink(path)
-			log.CheckError(err)
+			if err != nil {
+				log.Error("%s: %s", path, err)
+				continue
+			}
 			e.Contents = []byte(target)
 		default:
 			log.Fatal("%s: uncaught unhandled file type", path)
@@ -277,7 +303,7 @@ func backupDirContents(dirpath string, baseEntries []DirEntry,
 		entries = append(entries, e)
 	}
 
-	return writeDirEntries(entries, backend, splitBits)
+	return writeDirEntries(entries, backend, splitBits), nil
 }
 
 func isChunkReuseUnlikely(f os.FileInfo) bool {
@@ -294,11 +320,13 @@ func isChunkReuseUnlikely(f os.FileInfo) bool {
 	return false
 }
 
-func backupFileContents(path string, backend storage.Backend, splitBits uint) storage.MerkleHash {
+func backupFileContents(path string, backend storage.Backend, splitBits uint) (storage.MerkleHash, error) {
 	f, err := os.Open(path)
-	log.CheckError(err)
+	if err != nil {
+		return storage.MerkleHash{}, err
+	}
 	defer f.Close()
-	return storage.SplitAndStore(f, backend, splitBits)
+	return storage.SplitAndStore(f, backend, splitBits), nil
 }
 
 ///////////////////////////////////////////////////////////////////////////

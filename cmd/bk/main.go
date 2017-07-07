@@ -315,9 +315,11 @@ func backup(args []string) {
 			Error("--base: %s\n", err)
 		}
 		baseHash := lookupHash(*base, backend)
-		hash = BackupDirIncremental(dir, baseHash, backend, *splitBits)
+		hash, err = BackupDirIncremental(dir, baseHash, backend, *splitBits)
+		log.CheckError(err)
 	} else {
-		hash = BackupDir(dir, backend, *splitBits)
+		hash, err = BackupDir(dir, backend, *splitBits)
+		log.CheckError(err)
 	}
 
 	// Get all of the data on disk before we save the named hash.
