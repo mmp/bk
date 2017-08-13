@@ -115,17 +115,21 @@ func (l *Logger) Check(v bool, msg ...interface{}) {
 		return
 	}
 
+	var w io.Writer
 	if l != nil {
 		l.mu.Lock()
 		defer l.mu.Unlock()
 		l.NErrors++
+		w = l.err
+	} else {
+		w = os.Stderr
 	}
 
 	if len(msg) == 0 {
-		fmt.Fprint(l.err, format("Check failed\n"))
+		fmt.Fprint(w, format("Check failed\n"))
 	} else {
 		f := msg[0].(string)
-		fmt.Fprint(l.err, format(f, msg[1:]...))
+		fmt.Fprint(w, format(f, msg[1:]...))
 	}
 	os.Exit(1)
 }
@@ -137,18 +141,23 @@ func (l *Logger) CheckError(err error, msg ...interface{}) {
 		return
 	}
 
+	var w io.Writer
 	if l != nil {
 		l.mu.Lock()
 		defer l.mu.Unlock()
 		l.NErrors++
+		w = l.err
+	} else {
+		w = os.Stderr
 	}
 
 	if len(msg) == 0 {
-		fmt.Fprint(l.err, format("Error: %+v\n", err))
+		fmt.Fprint(w, format("Error: %+v\n", err))
 	} else {
 		f := msg[0].(string)
-		fmt.Fprint(l.err, format(f, msg[1:]...))
+		fmt.Fprint(w, format(f, msg[1:]...))
 	}
+	panic(err)
 	os.Exit(1)
 }
 
