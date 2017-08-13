@@ -8,7 +8,6 @@ import (
 	"bytes"
 	gcs "cloud.google.com/go/storage"
 	"golang.org/x/net/context"
-	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"hash/crc32"
 	"io"
@@ -132,10 +131,6 @@ func (g *gcsFileStorage) ReadFile(name string, offset, length int64) ([]byte, er
 	return b, err
 }
 
-func isTemporary(code int) bool {
-	return code == 429 || (code >= 500 && code < 600)
-}
-
 func retry(n string, f func() error) error {
 	const maxTries = 5
 	for tries := 0; ; tries++ {
@@ -145,13 +140,9 @@ func retry(n string, f func() error) error {
 			return err
 		}
 
-		if err, ok := err.(*googleapi.Error); ok && isTemporary(err.Code) {
-			// Possibly temporary error; sleep and retry.
-			log.Warning("%s: sleeping due to error %s", n, err.Error())
-			time.Sleep(time.Duration(100*(tries+1)) * time.Millisecond)
-		} else {
-			return err
-		}
+		// Possibly temporary error; sleep and retry.
+		log.Warning("%s: sleeping due to error %s", n, err.Error())
+		time.Sleep(time.Duration(100*(tries+1)) * time.Millisecond)
 	}
 }
 
