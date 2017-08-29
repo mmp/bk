@@ -151,12 +151,13 @@ func (e *DirEntry) GetContentsReader(sem chan bool, backend storage.Backend) (io
 
 ///////////////////////////////////////////////////////////////////////////
 
-func BackupDir(dirpath string, backend storage.Backend, splitBits uint) (storage.Hash, error) {
+func BackupDir(dirpath string, backend storage.Backend, splitBits uint,
+	excludedPaths []string) (storage.Hash, error) {
 	r, err := NewRoot(dirpath)
 	if err != nil {
 		return storage.Hash{}, err
 	}
-	r.Dir.Hash, err = backupDirContents(dirpath, nil, backend, splitBits)
+	r.Dir.Hash, err = backupDirContents(dirpath, nil, backend, splitBits, excludedPaths)
 	if err != nil {
 		return storage.Hash{}, err
 	}
@@ -164,7 +165,7 @@ func BackupDir(dirpath string, backend storage.Backend, splitBits uint) (storage
 }
 
 func BackupDirIncremental(dirpath string, baseHash storage.Hash,
-	backend storage.Backend, splitBits uint) (storage.Hash, error) {
+	backend storage.Backend, splitBits uint, excludedPaths []string) (storage.Hash, error) {
 	r, err := NewRoot(dirpath)
 	if err != nil {
 		return storage.Hash{}, err
@@ -178,7 +179,8 @@ func BackupDirIncremental(dirpath string, baseHash storage.Hash,
 	}
 	baseRootEntries := readDirEntries(baseRoot.Dir.Hash, backend)
 
-	r.Dir.Hash, err = backupDirContents(dirpath, baseRootEntries, backend, splitBits)
+	r.Dir.Hash, err = backupDirContents(dirpath, baseRootEntries, backend, splitBits,
+		excludedPaths)
 	if err != nil {
 		return storage.Hash{}, err
 	}
@@ -192,7 +194,7 @@ func BackupDirIncremental(dirpath string, baseHash storage.Hash,
 // returned from this function; we don't want to report failure if, for
 // example, we don't have permissions to read a file.
 func backupDirContents(dirpath string, baseEntries []DirEntry,
-	backend storage.Backend, splitBits uint) (storage.MerkleHash, error) {
+	backend storage.Backend, splitBits uint, excludedPaths []string) (storage.MerkleHash, error) {
 	fileinfo, err := ioutil.ReadDir(dirpath)
 	if err != nil {
 		return storage.MerkleHash{}, err
@@ -220,6 +222,20 @@ func backupDirContents(dirpath string, baseEntries []DirEntry,
 		}
 
 		path := filepath.Join(dirpath, f.Name())
+
+		isExcluded := func(path string, excludedPaths []string) bool {
+			for _, excl := range excludedPaths {
+				if strings.Contains(path, excl) {
+					return true
+				}
+			}
+			return false
+		}
+		if isExcluded(path, excludedPaths) {
+			log.Verbose("%s: excluding from backup", path)
+			continue
+		}
+
 		log.Debug("%s: backing up", path)
 		e, err := NewDirEntry(f)
 		if err != nil {
@@ -235,7 +251,8 @@ func backupDirContents(dirpath string, baseEntries []DirEntry,
 				// before continuing recursively.
 				childEntries = readDirEntries(baseEntry.Hash, backend)
 			}
-			e.Hash, err = backupDirContents(path, childEntries, backend, splitBits)
+			e.Hash, err = backupDirContents(path, childEntries, backend, splitBits,
+				excludedPaths)
 			if err != nil {
 				log.Error("%s: %s", path, err)
 				continue
