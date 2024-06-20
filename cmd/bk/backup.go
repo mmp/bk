@@ -200,13 +200,12 @@ func backupDirContents(dirpath string, baseEntries []DirEntry,
 		return storage.MerkleHash{}, err
 	}
 
-	// For incremental backups, there is an O(n) search that is performed n
-	// times in the following, where n is the number of directory entries.
-	// Therefore, warn if we come across a directory where this may be
-	// problematic.
-	if len(baseEntries) > 1000 {
-		log.Warning("%s: O(n^2) search with n=%d should probably be revisited",
-			dirpath, len(baseEntries))
+	baseEntryMap := make(map[string]int) // from Name to index in baseEntries
+	for i, be := range baseEntries {
+		if _, ok := baseEntryMap[be.Name]; ok {
+			log.Fatal("%s: unexpected repeat in baseEntries", be.Name)
+		}
+		baseEntryMap[be.Name] = i
 	}
 
 	var entries []DirEntry
@@ -214,11 +213,22 @@ func backupDirContents(dirpath string, baseEntries []DirEntry,
 		// Try to find a corresponding file/directory in the base backup, if
 		// one was provided.
 		var baseEntry *DirEntry
-		for _, e := range baseEntries {
+		if i, ok := baseEntryMap[f.Name()]; ok {
+			if baseEntries[i].Mode == f.Mode() {
+				baseEntry = &baseEntries[i]
+			}
+		}
+
+		// Test using old linear search.
+		var baseEntry2 *DirEntry
+		for i, e := range baseEntries {
 			if e.Name == f.Name() && e.Mode == f.Mode() {
-				baseEntry = &e
+				baseEntry2 = &baseEntries[i]
 				break
 			}
+		}
+		if baseEntry != baseEntry2 {
+			panic("oh noes")
 		}
 
 		path := filepath.Join(dirpath, f.Name())
