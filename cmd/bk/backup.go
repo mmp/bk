@@ -219,18 +219,6 @@ func backupDirContents(dirpath string, baseEntries []DirEntry,
 			}
 		}
 
-		// Test using old linear search.
-		var baseEntry2 *DirEntry
-		for i, e := range baseEntries {
-			if e.Name == f.Name() && e.Mode == f.Mode() {
-				baseEntry2 = &baseEntries[i]
-				break
-			}
-		}
-		if baseEntry != baseEntry2 {
-			panic("oh noes")
-		}
-
 		path := filepath.Join(dirpath, f.Name())
 
 		isExcluded := func(path string, excludedPaths []string) bool {
