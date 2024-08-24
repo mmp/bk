@@ -18,7 +18,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -122,69 +121,6 @@ func runButPossiblyKill(c string, args ...string) ([]byte, error) {
 }
 
 var errKilled = errors.New("killed while running")
-
-func runExpectSuccess(expected string, c string, args ...string) {
-	log.Printf("Running %s %v", c, args)
-	cmd := getCommand(c, args...)
-	cmd.Stderr = os.Stderr
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		log.Fatal(err)
-	}
-	if err := cmd.Start(); err != nil {
-		log.Fatal(err)
-	}
-
-	output, err := ioutil.ReadAll(stdout)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	checkMatch(expected, string(output))
-
-	if err := cmd.Wait(); err != nil {
-		log.Fatalf("Failed unexpectedly!")
-	}
-}
-
-func runExpectFailure(expected string, c string, args ...string) {
-	log.Printf("Running %s %v", c, args)
-	cmd := getCommand(c, args...)
-	cmd.Stdout = os.Stdout
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		log.Fatal(err)
-	}
-	if err := cmd.Start(); err != nil {
-		log.Fatal(err)
-	}
-
-	output, err := ioutil.ReadAll(stderr)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	checkMatch(expected, string(output))
-
-	if err := cmd.Wait(); err == nil {
-		log.Fatal("Ran successfully (unexpectedly)!")
-	}
-}
-
-func checkMatch(expected, output string) {
-	lines := strings.Split(output, "\n")
-	for _, l := range lines {
-		match, err := regexp.Match(expected, []byte(l))
-		if err != nil {
-			log.Fatal(err)
-		}
-		if match {
-			return
-		}
-	}
-	log.Fatalf("Didn't find expected output \"%s\" in \"%s\"", expected, output)
-}
 
 ///////////////////////////////////////////////////////////////////////////
 

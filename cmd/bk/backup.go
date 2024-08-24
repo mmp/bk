@@ -113,10 +113,6 @@ func (e *DirEntry) IsFile() bool {
 	return e.Mode&os.ModeType == 0
 }
 
-func isFile(mode os.FileMode) bool {
-	return mode&os.ModeType == 0
-}
-
 func (e *DirEntry) IsSymLink() bool {
 	return e.Mode&os.ModeSymlink != 0
 }
