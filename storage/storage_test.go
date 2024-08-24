@@ -33,7 +33,7 @@ func TestSimple(t *testing.T) {
 		if err != nil {
 			t.Errorf("%s: read all: %v", backend, err)
 		}
-		if bytes.Compare(simple, b) != 0 {
+		if !bytes.Equal(simple, b) {
 			t.Errorf("%s: bytes mismatch: wrote %+v, read %+v", backend, simple, b)
 		}
 	}
@@ -62,7 +62,7 @@ func TestNamed(t *testing.T) {
 			if err != nil {
 				t.Errorf("%s: read all: %v", backend, err)
 			}
-			if bytes.Compare(namedsimple, b) != 0 {
+			if !bytes.Equal(namedsimple, b) {
 				t.Errorf("%s: bytes mismatch: wrote %+v, read %+v",
 					backend, namedsimple, b)
 			}
@@ -128,7 +128,7 @@ func TestMany(t *testing.T) {
 				t.Errorf("%s: got length %d, expected %d", backend,
 					len(chunk), len(written[i]))
 			}
-			if bytes.Compare(chunk, written[i]) != 0 {
+			if !bytes.Equal(chunk, written[i]) {
 				t.Errorf("%s: didn't get same bytes back. hash %s, wrote %+v, got %+v",
 					backend, hash, written[i], chunk)
 			}
@@ -175,7 +175,7 @@ func TestManyRandom(t *testing.T) {
 			}
 
 			// Make sure the two match
-			if bytes.Compare(c, chunks[i]) != 0 {
+			if !bytes.Equal(c, chunks[i]) {
 				t.Errorf("%s: %d: didn't get same bytes back!", backend, i)
 			}
 		}

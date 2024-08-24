@@ -69,10 +69,10 @@ func TestE2E(t *testing.T) {
 	}
 
 	// Make sure that the recovered data matches the original
-	if bytes.Compare(origBuf, restored.Bytes()) != 0 {
+	if !bytes.Equal(origBuf, restored.Bytes()) {
 		t.Errorf("original bytes don't match restored")
 	}
-	if bytes.Compare(origRs, restoredRs.Bytes()) != 0 {
+	if !bytes.Equal(origRs, restoredRs.Bytes()) {
 		t.Errorf("original rs bytes don't match restored")
 	}
 }

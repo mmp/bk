@@ -43,7 +43,7 @@ func TestSplitCorrectAndDistribution(t *testing.T) {
 		}
 
 		// And make sure they match the original bytes!
-		if bytes.Compare(b, sliced) != 0 {
+		if !bytes.Equal(b, sliced) {
 			t.Fatalf("Contents don't match.")
 		}
 

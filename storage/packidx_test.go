@@ -52,7 +52,7 @@ func TestPacker(t *testing.T) {
 			t.Errorf("%d: decode blob error: %+v", i, err)
 		} else if len(chunk) != len(blobs[i]) {
 			t.Errorf("%d: Got size %d, expected %d", i, len(chunk), len(blobs[i]))
-		} else if bytes.Compare(chunk, blobs[i]) != 0 {
+		} else if !bytes.Equal(chunk, blobs[i]) {
 			t.Errorf("%d: chunk compare failed", i)
 		}
 	}

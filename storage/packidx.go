@@ -111,7 +111,7 @@ func (c *ChunkIndex) AddSingle(hash Hash, packName string, offset, length int64)
 func (c *ChunkIndex) AddIndexFile(packName string, idx []byte) (int, error) {
 	added := 0
 	for len(idx) > 0 {
-		if bytes.Compare(idx[:len(IdxMagic)], IdxMagic[:]) != 0 {
+		if !bytes.Equal(idx[:len(IdxMagic)], IdxMagic[:]) {
 			return added, ErrIndexMagicWrong
 		}
 		idx = idx[len(IdxMagic):]
