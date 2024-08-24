@@ -362,7 +362,7 @@ func (pb *PackFileBackend) String() string {
 }
 
 func (pb *PackFileBackend) LogStats() {
-	delta := time.Now().Sub(pb.start)
+	delta := time.Since(pb.start)
 	if pb.numSaves > 0 {
 		upBytesPerSec := float64(pb.bytesSaved) / delta.Seconds()
 		log.Print("stored %s of chunks in %d writes (avg %s, %s/s)",

@@ -46,7 +46,7 @@ func (r *ReportingReader) Read(buf []byte) (int, error) {
 }
 
 func (r *ReportingReader) report(prefix string) {
-	delta := time.Now().Sub(r.start)
+	delta := time.Since(r.start)
 	bytesPerSec := int64(float64(r.readBytes) / delta.Seconds())
 	log.Printf("%s%s %s [%s/s]", prefix, r.Msg, FmtBytes(r.readBytes),
 		FmtBytes(bytesPerSec))
