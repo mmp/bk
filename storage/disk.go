@@ -29,7 +29,7 @@ func NewDisk(dir string) Backend {
 	// Make sure that the backup directory exists and is in fact a directory.
 	stat, err := os.Stat(dir)
 	log.CheckError(err)
-	if stat.IsDir() == false {
+	if !stat.IsDir() {
 		log.Fatal("%s: is a regular file", dir)
 	}
 

@@ -527,7 +527,7 @@ func (pb *PackFileBackend) Hashes() map[Hash]struct{} {
 }
 
 func (pb *PackFileBackend) Fsck() {
-	if pb.fs.Fsck() == false {
+	if !pb.fs.Fsck() {
 		return
 	}
 

@@ -44,7 +44,7 @@ func InitBandwidthLimit(uploadBytesPerSecond, downloadBytesPerSecond int) {
 
 	go func() {
 		for {
-			_ = <-ticker.C
+			<-ticker.C
 
 			bandwidthMutex.Lock()
 
