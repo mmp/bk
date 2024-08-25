@@ -241,7 +241,9 @@ func update(dir string) error {
 						if _, err := io.Copy(f, bytes.NewReader(buf)); err != nil {
 							return err
 						}
-						f.Close()
+						if err := f.Close(); err != nil {
+							return err
+						}
 						log.Printf("%s: created file. length %d", n, newlen)
 					}
 				}
@@ -288,7 +290,6 @@ func update(dir string) error {
 				if err != nil {
 					return err
 				}
-				defer f.Close()
 
 				// seek somewhere and write some stuff
 				offset := int64(0)
@@ -312,6 +313,10 @@ func update(dir string) error {
 						return err
 					}
 					log.Printf("%s: truncated at %d", path, sz)
+				}
+
+				if err := f.Close(); err != nil {
+					log.Printf("%v", err)
 				}
 			}
 

@@ -55,8 +55,14 @@ func main() {
 			} else {
 				fmt.Print(fn, ": successfully verified integrity\n")
 			}
-			r.Close()
-			rsr.Close()
+			if err := r.Close(); err != nil {
+				fmt.Fprint(os.Stderr, err)
+				os.Exit(1)
+			}
+			if err := rsr.Close(); err != nil {
+				fmt.Fprint(os.Stderr, err)
+				os.Exit(1)
+			}
 		}
 	case "restore":
 		for _, fn := range os.Args[2:] {
@@ -83,8 +89,14 @@ func main() {
 				os.Exit(1)
 			}
 
-			r.Close()
-			rsr.Close()
+			if err := r.Close(); err != nil {
+				fmt.Fprint(os.Stderr, err)
+				os.Exit(1)
+			}
+			if err := rsr.Close(); err != nil {
+				fmt.Fprint(os.Stderr, err)
+				os.Exit(1)
+			}
 
 			if err = w.Close(); err != nil {
 				fmt.Fprint(os.Stderr, fn, ".restored: ", err, "\n")

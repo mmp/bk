@@ -160,7 +160,7 @@ func (w *robustWriter) Close() {
 	tmpPath := w.path + ".tmp"
 	r, err := os.Open(tmpPath)
 	log.CheckError(err)
-	defer r.Close()
+	defer func() { log.CheckError(r.Close()) }()
 	info, err := r.Stat()
 	log.CheckError(err)
 

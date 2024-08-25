@@ -385,7 +385,9 @@ func cat(args []string) {
 			Error("%s: %s\n", arg, err)
 		}
 		fmt.Print(string(b))
-		r.Close()
+		if err := r.Close(); err != nil {
+			Error("%s: %s\n", arg, err)
+		}
 	}
 
 	backend.LogStats()
@@ -574,7 +576,9 @@ func savebits(args []string) {
 
 	r := &u.ReportingReader{R: os.Stdin, Msg: "Read"}
 	backupHash := storage.SplitAndStore(r, backend, *splitBits)
-	r.Close()
+	if err := r.Close(); err != nil {
+		Error("%s\n", err)
+	}
 
 	// Sync before saving the named hash.
 	backend.SyncWrites()

@@ -336,8 +336,8 @@ func backupFileContents(path string, backend storage.Backend, splitBits uint) (s
 	if err != nil {
 		return storage.MerkleHash{}, err
 	}
-	defer f.Close()
-	return storage.SplitAndStore(f, backend, splitBits), nil
+	hash := storage.SplitAndStore(f, backend, splitBits)
+	return hash, f.Close()
 }
 
 ///////////////////////////////////////////////////////////////////////////
