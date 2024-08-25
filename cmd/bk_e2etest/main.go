@@ -37,9 +37,13 @@ func main() {
 	encrypt := randBool()
 	if encrypt {
 		os.Setenv("BK_PASSPHRASE", "foobar")
-		runCommand("bk init --encrypt")
+		if _, err := runCommand("bk init --encrypt"); err != nil {
+			log.Fatal(err)
+		}
 	} else {
-		runCommand("bk init")
+		if _, err := runCommand("bk init"); err != nil {
+			log.Fatal(err)
+		}
 	}
 	backupTest(randBool(), 20)
 }
@@ -234,7 +238,9 @@ func update(dir string) error {
 						newlen := expSize()
 						buf := make([]byte, newlen)
 						_, _ = rand.Read(buf)
-						io.Copy(f, bytes.NewReader(buf))
+						if _, err := io.Copy(f, bytes.NewReader(buf)); err != nil {
+							return err
+						}
 						f.Close()
 						log.Printf("%s: created file. length %d", n, newlen)
 					}

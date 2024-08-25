@@ -34,6 +34,7 @@ func NewDisk(dir string) Backend {
 	}
 
 	entries, err := ioutil.ReadDir(dir)
+	log.CheckError(err)
 	if len(entries) == 0 {
 		// Create the directories we'll need in the following
 		for _, d := range []string{"packs", "indices", "metadata"} {
@@ -73,7 +74,7 @@ func (db *disk) String() string {
 func (db *disk) Fsck() bool {
 	// Check the Reed-Solomon encoding of all of the (non-.rs) files.
 	log.Verbose("Checking Reed-Solomon codes of all files")
-	filepath.Walk(db.dir,
+	err := filepath.Walk(db.dir,
 		func(path string, info os.FileInfo, err error) error {
 			if !strings.HasSuffix(path, ".rs") {
 				r, err := os.Open(path)
@@ -91,6 +92,7 @@ func (db *disk) Fsck() bool {
 			}
 			return nil
 		})
+	log.CheckError(err)
 	return true
 }
 

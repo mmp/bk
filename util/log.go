@@ -44,7 +44,7 @@ func (l *Logger) Print(f string, args ...interface{}) {
 
 func (l *Logger) Debug(f string, args ...interface{}) {
 	if l == nil {
-		fmt.Fprintf(os.Stderr, format(f, args...))
+		fmt.Fprint(os.Stderr, format(f, args...))
 		return
 	}
 
@@ -58,7 +58,7 @@ func (l *Logger) Debug(f string, args ...interface{}) {
 
 func (l *Logger) Verbose(f string, args ...interface{}) {
 	if l == nil {
-		fmt.Fprintf(os.Stderr, format(f, args...))
+		fmt.Fprint(os.Stderr, format(f, args...))
 		return
 	}
 
@@ -72,7 +72,7 @@ func (l *Logger) Verbose(f string, args ...interface{}) {
 
 func (l *Logger) Warning(f string, args ...interface{}) {
 	if l == nil {
-		fmt.Fprintf(os.Stderr, format(f, args...))
+		fmt.Fprint(os.Stderr, format(f, args...))
 		return
 	}
 
@@ -83,7 +83,7 @@ func (l *Logger) Warning(f string, args ...interface{}) {
 
 func (l *Logger) Error(f string, args ...interface{}) {
 	if l == nil {
-		fmt.Fprintf(os.Stderr, format(f, args...))
+		fmt.Fprint(os.Stderr, format(f, args...))
 		return
 	}
 
@@ -95,7 +95,7 @@ func (l *Logger) Error(f string, args ...interface{}) {
 
 func (l *Logger) Fatal(f string, args ...interface{}) {
 	if l == nil {
-		fmt.Fprintf(os.Stderr, format(f, args...))
+		fmt.Fprint(os.Stderr, format(f, args...))
 		return
 	}
 
@@ -158,7 +158,6 @@ func (l *Logger) CheckError(err error, msg ...interface{}) {
 		fmt.Fprint(w, format(f, msg[1:]...))
 	}
 	panic(err)
-	os.Exit(1)
 }
 
 func format(f string, args ...interface{}) string {

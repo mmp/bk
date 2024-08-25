@@ -500,6 +500,7 @@ func (b *BackupReader) restoreFile(ctx *parallelContext, e DirEntry, path string
 	log.CheckError(err)
 
 	rc, err := e.GetContentsReader(sem, b.backend)
+	log.CheckError(err)
 	_, err = io.Copy(f, rc)
 	log.CheckError(err)
 	log.CheckError(rc.Close())

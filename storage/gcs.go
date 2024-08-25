@@ -192,17 +192,17 @@ func (gw *gcsWriter) Close() {
 
 var castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 
-func (g *gcsFileStorage) upload(name string, storageClass string, buf []byte) error {
+func (g *gcsFileStorage) upload(name string, storageClass string, buf []byte) (err error) {
 	// Make sure the files don't already exist. (Ideally would check this
 	// before Close, but this shouldn't happen in general...)
 	obj := g.bucket.Object(name)
-	if _, err := obj.Attrs(g.ctx); err == nil {
+	if _, e := obj.Attrs(g.ctx); e == nil {
 		log.Fatal("%s: already exsits.", name)
 	}
 
 	tmpName := name + ".tmp"
 	tmpObj := g.bucket.Object(tmpName)
-	if _, err := tmpObj.Attrs(g.ctx); err == nil {
+	if _, e := tmpObj.Attrs(g.ctx); e == nil {
 		log.Fatal("%s: already exsits.", tmpName)
 	}
 
@@ -212,15 +212,23 @@ func (g *gcsFileStorage) upload(name string, storageClass string, buf []byte) er
 	// Make it upload along the way rather than waiting until the rate
 	// limiting code eventually gives it all the data.
 	w.ChunkSize = 256 * 1024
-	defer tmpObj.Delete(g.ctx)
+	defer func() {
+		if e := tmpObj.Delete(g.ctx); e != nil {
+			// If err has already been set, then leave it be, since that
+			// error is probably more important than this one.
+			if err == nil {
+				err = e
+			}
+		}
+	}()
 
 	r := NewLimitedUploadReader(bytes.NewReader(buf))
-	if _, err := io.Copy(w, r); err != nil {
+	if _, err = io.Copy(w, r); err != nil {
 		w.Close()
-		return err
+		return
 	}
-	if err := w.Close(); err != nil {
-		return err
+	if err = w.Close(); err != nil {
+		return
 	}
 
 	log.Verbose("%s: finished upload", name)
@@ -244,6 +252,6 @@ func (g *gcsFileStorage) upload(name string, storageClass string, buf []byte) er
 	// No idea why it insists this be set directly for the copier to work.
 	copier.ContentType = "application/octet-stream"
 
-	_, err := copier.Run(g.ctx)
-	return err
+	_, err = copier.Run(g.ctx)
+	return
 }

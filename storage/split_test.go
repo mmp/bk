@@ -130,7 +130,10 @@ func testByteChange(t *testing.T, borig []byte, sb int, seed int64) {
 		}
 
 		// Resplit and count how many new blobs we get.
-		reader.Seek(io.SeekStart, 0)
+		_, err := reader.Seek(0, io.SeekStart)
+		if err != nil {
+			t.Errorf("Seek failed: %v", err)
+		}
 
 		newHashes := 0
 		for {

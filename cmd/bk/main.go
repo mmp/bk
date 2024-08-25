@@ -228,7 +228,9 @@ func main() {
 		log.Print("Starting profiling.")
 		f, err := os.Create("bk.prof")
 		log.CheckError(err)
-		pprof.StartCPUProfile(f)
+		if err = pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("%s", err)
+		}
 
 		go func() {
 			sigchan := make(chan os.Signal, 10)
@@ -247,7 +249,9 @@ func main() {
 			if err != nil {
 				log.Fatal("%s", err)
 			}
-			pprof.WriteHeapProfile(f)
+			if err := pprof.WriteHeapProfile(f); err != nil {
+				log.Fatal("%s", err)
+			}
 			os.Exit(0)
 		}()
 	}
