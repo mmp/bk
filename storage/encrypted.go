@@ -153,13 +153,17 @@ func (eb *encrypted) SyncWrites() {
 		// Important: use eb, not eb.backend, so these are encrypted!
 		hash := MerkleFromSingle(eb.Write(buf.Bytes()))
 
-		// The name doesn't matter but does need to be unique.
+		// Make sure the chunk holding the log has actually landed in storage
+		// *before* writing the metadata that points to it. Otherwise a crash
+		// in between would leave a durable metadata entry referring to a chunk
+		// that was never stored, which would in turn cause a fatal error the
+		// next time the repository is opened (NewEncrypted reads all of these).
+		eb.backend.SyncWrites()
+
+		// The name doesn't matter but does need to be unique. WriteMetadata
+		// lands synchronously, so the pointer is durable once it returns.
 		name := toEncryptedPrefix + hash.Hash.String()
 		eb.backend.WriteMetadata(name, hash.Bytes())
-
-		// Now have the backend do its thing and make sure that the metadata
-		// has also landed.
-		eb.backend.SyncWrites()
 
 		eb.toEncryptedLog = nil
 	}
