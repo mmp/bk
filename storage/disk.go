@@ -180,7 +180,24 @@ func (w *robustWriter) Close() {
 
 	// Finally, rename the temporary file for the data (which we now know
 	// to be valid and complete) to the final filename that we wanted
-	// originally. Only once the rename has succeeded can we be sure that
-	// everything is safely on disk.
+	// originally.
 	log.CheckError(os.Rename(tmpPath, w.path))
+
+	// A rename isn't durable until the containing directory's own metadata
+	// has been flushed to disk; without this, a power loss could lose the
+	// renamed files even though their contents were fsync'd above, leaving a
+	// backup that we reported as saved but that no longer exists. Both the
+	// data file and its .rs file live in the same directory, so a single sync
+	// commits both. Only once this returns can we be sure everything is
+	// safely on disk.
+	syncDir(filepath.Dir(w.path))
+}
+
+// syncDir flushes the given directory's metadata to disk so that file
+// creations and renames within it survive a crash. Any error is fatal.
+func syncDir(dir string) {
+	d, err := os.Open(dir)
+	log.CheckError(err)
+	log.CheckError(d.Sync())
+	log.CheckError(d.Close())
 }
