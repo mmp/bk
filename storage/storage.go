@@ -7,12 +7,13 @@ package storage
 import (
 	"encoding/hex"
 	"errors"
-	u "github.com/mmp/bk/util"
-	"golang.org/x/crypto/sha3"
 	"io"
 	"io/ioutil"
 	"os"
 	"time"
+
+	u "github.com/mmp/bk/util"
+	"golang.org/x/crypto/sha3"
 )
 
 var (
@@ -133,7 +134,7 @@ type Backend interface {
 func errorIfExists(path string) {
 	_, err := os.Stat(path)
 	if err == nil {
-		log.Fatal(path + ": file exists")
+		log.Fatal("%s: file exists", path)
 	}
 }
 
