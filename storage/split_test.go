@@ -42,13 +42,13 @@ func testSeed(t *testing.T) int64 {
 
 func TestSplitCorrectAndDistribution(t *testing.T) {
 	seed := testSeed(t)
-	rand.Seed(seed)
+	rng := rand.New(rand.NewSource(seed))
 	t.Logf("Seed %d", seed)
 
 	// Make a random byte array
 	const sz = 32 * 1024 * 1024
-	b := make([]byte, sz+rand.Intn(sz))
-	_, _ = rand.Read(b)
+	b := make([]byte, sz+rng.Intn(sz))
+	_, _ = rng.Read(b)
 
 	// For each of a range of split bits...
 	for sb := 8; sb <= 16; sb++ {
@@ -99,11 +99,11 @@ type SHA1Hash [sha1.Size]byte
 // don't get too many new chunks.
 func TestSplitByteChange(t *testing.T) {
 	seed := testSeed(t)
-	rand.Seed(seed)
+	rng := rand.New(rand.NewSource(seed))
 	t.Logf("Seed %d", seed)
 
 	b := make([]byte, 512*1024)
-	_, _ = rand.Read(b)
+	_, _ = rng.Read(b)
 
 	var wg sync.WaitGroup
 	for _, sb := range []int{8, 13, 16, 18} {
